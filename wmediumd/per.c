@@ -26,15 +26,27 @@ struct rate {
 };
 
 /* 802.11a rate set */
+/*
+ * rate sets are defined in drivers/net/wireless/mac80211_hwsim.c#hwsim_rates.
+ */
 struct rate rateset[] = {
-	{ .mbps = 6, .mqam = 2, .fec = FEC_RATE_1_2 },
-	{ .mbps = 9, .mqam = 2, .fec = FEC_RATE_3_4 },
-	{ .mbps = 12, .mqam = 4, .fec = FEC_RATE_1_2 },
-	{ .mbps = 18, .mqam = 4, .fec = FEC_RATE_3_4 },
-	{ .mbps = 24, .mqam = 16, .fec = FEC_RATE_1_2 },
-	{ .mbps = 36, .mqam = 16, .fec = FEC_RATE_3_4 },
-	{ .mbps = 48, .mqam = 64, .fec = FEC_RATE_2_3 },
-	{ .mbps = 54, .mqam = 64, .fec = FEC_RATE_3_4 },
+	/*
+	 * XXX:
+	 * For rate = 1, 2, 5.5, 11 Mbps, we will use mqam and fec of closest
+	 * rate. Because these rates are not OFDM rate.
+	 */
+	{ .mbps = 10, .mqam = 2, .fec = FEC_RATE_1_2 },
+	{ .mbps = 20, .mqam = 2, .fec = FEC_RATE_1_2 },
+	{ .mbps = 55, .mqam = 2, .fec = FEC_RATE_1_2 },
+	{ .mbps = 110, .mqam = 4, .fec = FEC_RATE_1_2 },
+	{ .mbps = 60, .mqam = 2, .fec = FEC_RATE_1_2 },
+	{ .mbps = 90, .mqam = 2, .fec = FEC_RATE_3_4 },
+	{ .mbps = 120, .mqam = 4, .fec = FEC_RATE_1_2 },
+	{ .mbps = 180, .mqam = 4, .fec = FEC_RATE_3_4 },
+	{ .mbps = 240, .mqam = 16, .fec = FEC_RATE_1_2 },
+	{ .mbps = 360, .mqam = 16, .fec = FEC_RATE_3_4 },
+	{ .mbps = 480, .mqam = 64, .fec = FEC_RATE_2_3 },
+	{ .mbps = 540, .mqam = 64, .fec = FEC_RATE_3_4 },
 };
 
 
@@ -259,5 +271,5 @@ int index_to_rate(size_t index)
 	if (index >= ARRAY_SIZE(rateset))
 		index = ARRAY_SIZE(rateset) - 1;
 
-	return rateset[index].mbps * 10;
+	return rateset[index].mbps;
 }
