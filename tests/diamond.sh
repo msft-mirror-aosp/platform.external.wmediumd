@@ -14,8 +14,26 @@ if [[ $UID -ne 0 ]]; then
 	exit 1
 fi
 
+if [[ $# -eq 0 ]]; then
+	band=2
+elif [[ $1 -eq 2 ]]; then
+	band=2
+elif [[ $1 -eq 5 ]]; then
+	band=5
+else
+	echo "invalid band value"
+	exit 1
+fi
+
+if [[ $band -eq 2 ]]; then
+	freq=2412
+else
+	freq=5180
+fi
+
 modprobe -r mac80211_hwsim
 modprobe mac80211_hwsim radios=$num_nodes
+iw reg set US
 
 for i in `seq 0 $((num_nodes-1))`; do
 	addrs[$i]=`printf $macfmt $i`
@@ -30,6 +48,8 @@ ifaces :
 		"02:00:00:00:02:00",
 		"02:00:00:00:03:00"
 	];
+
+	band = $band;
 
 	links = (
 		(0, 1, 10),
@@ -79,7 +99,7 @@ for addr in ${addrs[@]}; do
 
 	# start mesh node
 	tmux send-keys -t $win '. func' C-m
-	tmux send-keys -t $win 'meshup-iw '$dev' diamond 2412 '$ip C-m
+	tmux send-keys -t $win 'meshup-iw '$dev' diamond '$freq' '$ip C-m
 
 	i=$((i+1))
 done

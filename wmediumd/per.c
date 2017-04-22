@@ -25,11 +25,10 @@ struct rate {
 	enum fec_rate fec;
 };
 
-/* 802.11a rate set */
 /*
  * rate sets are defined in drivers/net/wireless/mac80211_hwsim.c#hwsim_rates.
  */
-struct rate rateset[] = {
+static struct rate rateset_2GHz[] = {
 	/*
 	 * XXX:
 	 * For rate = 1, 2, 5.5, 11 Mbps, we will use mqam and fec of closest
@@ -49,6 +48,19 @@ struct rate rateset[] = {
 	{ .mbps = 540, .mqam = 64, .fec = FEC_RATE_3_4 },
 };
 
+static struct rate rateset_5GHz[] = {
+	{ .mbps = 60, .mqam = 2, .fec = FEC_RATE_1_2 },
+	{ .mbps = 90, .mqam = 2, .fec = FEC_RATE_3_4 },
+	{ .mbps = 120, .mqam = 4, .fec = FEC_RATE_1_2 },
+	{ .mbps = 180, .mqam = 4, .fec = FEC_RATE_3_4 },
+	{ .mbps = 240, .mqam = 16, .fec = FEC_RATE_1_2 },
+	{ .mbps = 360, .mqam = 16, .fec = FEC_RATE_3_4 },
+	{ .mbps = 480, .mqam = 64, .fec = FEC_RATE_2_3 },
+	{ .mbps = 540, .mqam = 64, .fec = FEC_RATE_3_4 },
+};
+
+static struct rate *rateset;
+static size_t rate_len;
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 
@@ -169,7 +181,7 @@ double get_error_prob_from_snr(double snr, unsigned int rate_idx, int frame_len)
 	if (snr <= 0.0)
 		return 1.0;
 
-	if (rate_idx >= ARRAY_SIZE(rateset))
+	if (rate_idx >= rate_len)
 		return 1.0;
 
 	m = rateset[rate_idx].mqam;
@@ -198,10 +210,10 @@ static double get_error_prob_from_per_matrix(struct wmediumd *ctx, double snr,
 	if (signal_idx >= ctx->per_matrix_row_num)
 		return 0.0;
 
-	if (rate_idx >= ARRAY_SIZE(rateset))
+	if (rate_idx >= rate_len)
 		return 1.0;
 
-	return ctx->per_matrix[signal_idx * ARRAY_SIZE(rateset) + rate_idx];
+	return ctx->per_matrix[signal_idx * rate_len + rate_idx];
 }
 
 int read_per_file(struct wmediumd *ctx, const char *file_name)
@@ -240,8 +252,7 @@ int read_per_file(struct wmediumd *ctx, const char *file_name)
 			return EXIT_FAILURE;
 		}
 
-		temp = realloc(ctx->per_matrix, sizeof(float) *
-				ARRAY_SIZE(rateset) *
+		temp = realloc(ctx->per_matrix, sizeof(float) * rate_len *
 				++ctx->per_matrix_row_num);
 		if (temp == NULL) {
 			w_flogf(ctx, LOG_ERR, stderr,
@@ -250,10 +261,10 @@ int read_per_file(struct wmediumd *ctx, const char *file_name)
 		}
 		ctx->per_matrix = temp;
 
-		for (i = 0; i < ARRAY_SIZE(rateset); i++) {
+		for (i = 0; i < rate_len; i++) {
 			if (fscanf(fp, "%f", &ctx->per_matrix[
 				(signal - ctx->per_matrix_signal_min) *
-				ARRAY_SIZE(rateset) + i]) == EOF) {
+				rate_len + i]) == EOF) {
 				w_flogf(ctx, LOG_ERR, stderr,
 					"Not enough rate found\n");
 				return EXIT_FAILURE;
@@ -268,8 +279,19 @@ int read_per_file(struct wmediumd *ctx, const char *file_name)
 
 int index_to_rate(size_t index)
 {
-	if (index >= ARRAY_SIZE(rateset))
-		index = ARRAY_SIZE(rateset) - 1;
+	if (index >= rate_len)
+		index = rate_len - 1;
 
 	return rateset[index].mbps;
+}
+
+void set_band(int band)
+{
+	if (band == 2) {
+		rateset = rateset_2GHz;
+		rate_len = ARRAY_SIZE(rateset_2GHz);
+	} else {
+		rateset = rateset_5GHz;
+		rate_len = ARRAY_SIZE(rateset_5GHz);
+	}
 }
