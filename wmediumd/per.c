@@ -64,7 +64,7 @@ static size_t rate_len;
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 
-double n_choose_k(double n, double k)
+static double n_choose_k(double n, double k)
 {
 	int i;
 	double c = 1;
@@ -81,7 +81,7 @@ double n_choose_k(double n, double k)
 	return c;
 }
 
-double dot(double *v1, double *v2, int len)
+static double dot(double *v1, double *v2, int len)
 {
 	int i;
 	double val = 0;
@@ -96,7 +96,7 @@ double dot(double *v1, double *v2, int len)
  * Compute bit error rate for BPSK at a given SNR.
  * See http://en.wikipedia.org/wiki/Phase-shift_keying
  */
-double bpsk_ber(double snr_db)
+static double bpsk_ber(double snr_db)
 {
 	double snr = pow(10, (snr_db / 10.));
 
@@ -107,7 +107,7 @@ double bpsk_ber(double snr_db)
  * Compute bit error rate for M-QAM at a given SNR.
  * See http://www.dsplog.com/2012/01/01/symbol-error-rate-16qam-64qam-256qam/
  */
-double mqam_ber(int m, double snr_db)
+static double mqam_ber(int m, double snr_db)
 {
 	double k = sqrt(1. / ((2./3) * (m - 1)));
 	double snr = pow(10, (snr_db / 10.));
@@ -124,7 +124,7 @@ double mqam_ber(int m, double snr_db)
 /*
  * Compute packet (frame) error rate given a length
  */
-double per(double ber, enum fec_rate rate, int frame_len)
+static double per(double ber, enum fec_rate rate, int frame_len)
 {
 	/* free distances for each fec_rate */
 	int d_free[] = { 10, 6, 5 };
