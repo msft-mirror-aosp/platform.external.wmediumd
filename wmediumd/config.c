@@ -59,15 +59,16 @@ static int get_link_snr_from_snr_matrix(struct wmediumd *ctx,
 }
 
 static double _get_error_prob_from_snr(struct wmediumd *ctx, double snr,
-				       unsigned int rate_idx, int frame_len,
+				       unsigned int rate_idx, u32 freq,
+				       int frame_len,
 				       struct station *src, struct station *dst)
 {
-	return get_error_prob_from_snr(snr, rate_idx, frame_len);
+	return get_error_prob_from_snr(snr, rate_idx, freq, frame_len);
 }
 
 static double get_error_prob_from_matrix(struct wmediumd *ctx, double snr,
-					 unsigned int rate_idx, int frame_len,
-					 struct station *src,
+					 unsigned int rate_idx, u32 freq,
+					 int frame_len, struct station *src,
 					 struct station *dst)
 {
 	if (dst == NULL) // dst is multicast. returned value will not be used.
@@ -300,12 +301,12 @@ static int get_no_fading_signal(struct wmediumd *ctx)
 int load_config(struct wmediumd *ctx, const char *file, const char *per_file)
 {
 	config_t cfg, *cf;
-	const config_setting_t *ids, *_band, *links, *model_type;
+	const config_setting_t *ids, *links, *model_type;
 	const config_setting_t *error_probs = NULL, *error_prob;
 	const config_setting_t *enable_interference;
 	const config_setting_t *fading_coefficient, *default_prob;
 	int count_ids, i, j;
-	int start, end, snr, band;
+	int start, end, snr;
 	struct station *station;
 	const char *model_type_str;
 	float default_prob_value = 0.0;
@@ -331,11 +332,7 @@ int load_config(struct wmediumd *ctx, const char *file, const char *per_file)
 	}
 	count_ids = config_setting_length(ids);
 
-	_band = config_lookup(cf, "ifaces.band");
-	band = _band ? config_setting_get_int(_band) : 2;
-	set_band(band);
-
-	w_logf(ctx, LOG_NOTICE, "#_if = %d, band=%d\n", count_ids, band);
+	w_logf(ctx, LOG_NOTICE, "#_if = %d\n", count_ids);
 
 	/* Fill the mac_addr */
 	ctx->sta_array = malloc(sizeof(struct station *) * count_ids);

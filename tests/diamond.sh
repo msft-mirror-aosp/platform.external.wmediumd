@@ -15,20 +15,9 @@ if [[ $UID -ne 0 ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-	band=2
-elif [[ $1 -eq 2 ]]; then
-	band=2
-elif [[ $1 -eq 5 ]]; then
-	band=5
-else
-	echo "invalid band value"
-	exit 1
-fi
-
-if [[ $band -eq 2 ]]; then
 	freq=2412
 else
-	freq=5180
+	freq=$1
 fi
 
 modprobe -r mac80211_hwsim
@@ -48,8 +37,6 @@ ifaces :
 		"02:00:00:00:02:00",
 		"02:00:00:00:03:00"
 	];
-
-	band = $band;
 
 	links = (
 		(0, 1, 10),
