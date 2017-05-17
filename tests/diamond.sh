@@ -14,8 +14,15 @@ if [[ $UID -ne 0 ]]; then
 	exit 1
 fi
 
+if [[ $# -eq 0 ]]; then
+	freq=2412
+else
+	freq=$1
+fi
+
 modprobe -r mac80211_hwsim
 modprobe mac80211_hwsim radios=$num_nodes
+iw reg set US
 
 for i in `seq 0 $((num_nodes-1))`; do
 	addrs[$i]=`printf $macfmt $i`
@@ -79,7 +86,7 @@ for addr in ${addrs[@]}; do
 
 	# start mesh node
 	tmux send-keys -t $win '. func' C-m
-	tmux send-keys -t $win 'meshup-iw '$dev' diamond 2412 '$ip C-m
+	tmux send-keys -t $win 'meshup-iw '$dev' diamond '$freq' '$ip C-m
 
 	i=$((i+1))
 done

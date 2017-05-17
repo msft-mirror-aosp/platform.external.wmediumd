@@ -12,6 +12,8 @@
 
 #include "wmediumd.h"
 
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
+
 /* Code rates for convolutional codes */
 enum fec_rate {
 	FEC_RATE_1_2,
@@ -25,22 +27,31 @@ struct rate {
 	enum fec_rate fec;
 };
 
-/* 802.11a rate set */
-struct rate rateset[] = {
-	{ .mbps = 6, .mqam = 2, .fec = FEC_RATE_1_2 },
-	{ .mbps = 9, .mqam = 2, .fec = FEC_RATE_3_4 },
-	{ .mbps = 12, .mqam = 4, .fec = FEC_RATE_1_2 },
-	{ .mbps = 18, .mqam = 4, .fec = FEC_RATE_3_4 },
-	{ .mbps = 24, .mqam = 16, .fec = FEC_RATE_1_2 },
-	{ .mbps = 36, .mqam = 16, .fec = FEC_RATE_3_4 },
-	{ .mbps = 48, .mqam = 64, .fec = FEC_RATE_2_3 },
-	{ .mbps = 54, .mqam = 64, .fec = FEC_RATE_3_4 },
+/*
+ * rate sets are defined in drivers/net/wireless/mac80211_hwsim.c#hwsim_rates.
+ */
+static struct rate rateset[] = {
+	/*
+	 * XXX:
+	 * For rate = 1, 2, 5.5, 11 Mbps, we will use mqam and fec of closest
+	 * rate. Because these rates are not OFDM rate.
+	 */
+	{ .mbps = 10, .mqam = 2, .fec = FEC_RATE_1_2 },
+	{ .mbps = 20, .mqam = 2, .fec = FEC_RATE_1_2 },
+	{ .mbps = 55, .mqam = 2, .fec = FEC_RATE_1_2 },
+	{ .mbps = 110, .mqam = 4, .fec = FEC_RATE_1_2 },
+	{ .mbps = 60, .mqam = 2, .fec = FEC_RATE_1_2 },
+	{ .mbps = 90, .mqam = 2, .fec = FEC_RATE_3_4 },
+	{ .mbps = 120, .mqam = 4, .fec = FEC_RATE_1_2 },
+	{ .mbps = 180, .mqam = 4, .fec = FEC_RATE_3_4 },
+	{ .mbps = 240, .mqam = 16, .fec = FEC_RATE_1_2 },
+	{ .mbps = 360, .mqam = 16, .fec = FEC_RATE_3_4 },
+	{ .mbps = 480, .mqam = 64, .fec = FEC_RATE_2_3 },
+	{ .mbps = 540, .mqam = 64, .fec = FEC_RATE_3_4 },
 };
+static size_t rate_len = ARRAY_SIZE(rateset);
 
-
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
-
-double n_choose_k(double n, double k)
+static double n_choose_k(double n, double k)
 {
 	int i;
 	double c = 1;
@@ -57,7 +68,7 @@ double n_choose_k(double n, double k)
 	return c;
 }
 
-double dot(double *v1, double *v2, int len)
+static double dot(double *v1, double *v2, int len)
 {
 	int i;
 	double val = 0;
@@ -72,7 +83,7 @@ double dot(double *v1, double *v2, int len)
  * Compute bit error rate for BPSK at a given SNR.
  * See http://en.wikipedia.org/wiki/Phase-shift_keying
  */
-double bpsk_ber(double snr_db)
+static double bpsk_ber(double snr_db)
 {
 	double snr = pow(10, (snr_db / 10.));
 
@@ -83,7 +94,7 @@ double bpsk_ber(double snr_db)
  * Compute bit error rate for M-QAM at a given SNR.
  * See http://www.dsplog.com/2012/01/01/symbol-error-rate-16qam-64qam-256qam/
  */
-double mqam_ber(int m, double snr_db)
+static double mqam_ber(int m, double snr_db)
 {
 	double k = sqrt(1. / ((2./3) * (m - 1)));
 	double snr = pow(10, (snr_db / 10.));
@@ -100,7 +111,7 @@ double mqam_ber(int m, double snr_db)
 /*
  * Compute packet (frame) error rate given a length
  */
-double per(double ber, enum fec_rate rate, int frame_len)
+static double per(double ber, enum fec_rate rate, int frame_len)
 {
 	/* free distances for each fec_rate */
 	int d_free[] = { 10, 6, 5 };
@@ -148,7 +159,8 @@ double per(double ber, enum fec_rate rate, int frame_len)
 	return 1.0 - pow(1 - prob_uncorrected, 8 * frame_len);
 }
 
-double get_error_prob_from_snr(double snr, unsigned int rate_idx, int frame_len)
+double get_error_prob_from_snr(double snr, unsigned int rate_idx, u32 freq,
+			       int frame_len)
 {
 	int m;
 	enum fec_rate fec;
@@ -157,7 +169,10 @@ double get_error_prob_from_snr(double snr, unsigned int rate_idx, int frame_len)
 	if (snr <= 0.0)
 		return 1.0;
 
-	if (rate_idx >= ARRAY_SIZE(rateset))
+	if (freq > 5000)
+		rate_idx += 4;
+
+	if (rate_idx >= rate_len)
 		return 1.0;
 
 	m = rateset[rate_idx].mqam;
@@ -172,7 +187,7 @@ double get_error_prob_from_snr(double snr, unsigned int rate_idx, int frame_len)
 }
 
 static double get_error_prob_from_per_matrix(struct wmediumd *ctx, double snr,
-					     unsigned int rate_idx,
+					     unsigned int rate_idx, u32 freq,
 					     int frame_len, struct station *src,
 					     struct station *dst)
 {
@@ -186,10 +201,13 @@ static double get_error_prob_from_per_matrix(struct wmediumd *ctx, double snr,
 	if (signal_idx >= ctx->per_matrix_row_num)
 		return 0.0;
 
-	if (rate_idx >= ARRAY_SIZE(rateset))
+	if (freq > 5000)
+		rate_idx += 4;
+
+	if (rate_idx >= rate_len)
 		return 1.0;
 
-	return ctx->per_matrix[signal_idx * ARRAY_SIZE(rateset) + rate_idx];
+	return ctx->per_matrix[signal_idx * rate_len + rate_idx];
 }
 
 int read_per_file(struct wmediumd *ctx, const char *file_name)
@@ -228,8 +246,7 @@ int read_per_file(struct wmediumd *ctx, const char *file_name)
 			return EXIT_FAILURE;
 		}
 
-		temp = realloc(ctx->per_matrix, sizeof(float) *
-				ARRAY_SIZE(rateset) *
+		temp = realloc(ctx->per_matrix, sizeof(float) * rate_len *
 				++ctx->per_matrix_row_num);
 		if (temp == NULL) {
 			w_flogf(ctx, LOG_ERR, stderr,
@@ -238,10 +255,10 @@ int read_per_file(struct wmediumd *ctx, const char *file_name)
 		}
 		ctx->per_matrix = temp;
 
-		for (i = 0; i < ARRAY_SIZE(rateset); i++) {
+		for (i = 0; i < rate_len; i++) {
 			if (fscanf(fp, "%f", &ctx->per_matrix[
 				(signal - ctx->per_matrix_signal_min) *
-				ARRAY_SIZE(rateset) + i]) == EOF) {
+				rate_len + i]) == EOF) {
 				w_flogf(ctx, LOG_ERR, stderr,
 					"Not enough rate found\n");
 				return EXIT_FAILURE;
@@ -254,10 +271,13 @@ int read_per_file(struct wmediumd *ctx, const char *file_name)
 	return EXIT_SUCCESS;
 }
 
-int index_to_rate(size_t index)
+int index_to_rate(size_t index, u32 freq)
 {
-	if (index >= ARRAY_SIZE(rateset))
-		index = ARRAY_SIZE(rateset) - 1;
+	if (freq > 5000)
+		index += 4;
 
-	return rateset[index].mbps * 10;
+	if (index >= rate_len)
+		index = rate_len - 1;
+
+	return rateset[index].mbps;
 }
