@@ -50,6 +50,8 @@ ifaces :
 __EOM
 
 tmux new -s $session -d
+# find out the index of the first window as we can't assume zero-indexing
+first_idx=`tmux list-windows -t $session | head -n1 | cut -d: -f1`
 
 rm /tmp/netns.pid.* 2>/dev/null
 i=0
@@ -62,11 +64,11 @@ for addr in ${addrs[@]}; do
 	ip=${subnet}.$((10 + i))
 
 	# put this phy in own netns and tmux window, and start a mesh node
-	win=$session:$((i+1)).0
-	tmux new-window -t $session -n $ip
+	tmux new-window -t $session
 
 	# start netns
 	pidfile=/tmp/netns.pid.$i
+	win=$session:$((first_idx+i+1))
 	tmux send-keys -t $win 'lxc-unshare -s NETWORK /bin/bash' C-m
 	tmux send-keys -t $win 'echo $$ > '$pidfile C-m
 
@@ -76,7 +78,8 @@ for addr in ${addrs[@]}; do
 		sleep 0.5
 	done
 
-	tmux send-keys -t $session:0.0 'iw phy '$phy' set netns `cat '$pidfile'`' C-m
+	tmux send-keys -t $session:$first_idx \
+        'iw phy '$phy' set netns `cat '$pidfile'`' C-m
 
 	# wait for phy to exist in netns
 	while [[ -e /sys/class/ieee80211/$phy ]]; do
@@ -90,22 +93,20 @@ for addr in ${addrs[@]}; do
 
 	i=$((i+1))
 done
-winct=$i
 
 # start wmediumd
-win=$session:$((winct+1)).0
-winct=$((winct+1))
-tmux new-window -a -t $session -n wmediumd
-tmux send-keys -t $win '../wmediumd/wmediumd -c diamond.cfg' C-m
+tmux send-keys -t $session:$first_idx '../wmediumd/wmediumd -c diamond.cfg' C-m
 
 # start iperf server on 10.10.10.13
-tmux send-keys -t $session:4 'iperf -s' C-m
+node_idx=$((first_idx + 4))
+tmux send-keys -t $session:$node_idx 'iperf -s' C-m
 
 # enable monitor
-tmux send-keys -t $session:0 'ip link set hwsim0 up' C-m
+tmux send-keys -t $session:$first_idx 'ip link set hwsim0 up' C-m
 
-tmux select-window -t $session:1
-tmux send-keys -t $session:1 'ping -c 5 10.10.10.13' C-m
-tmux send-keys -t $session:1 'iperf -c 10.10.10.13 -i 5 -t 120'
+node_idx=$((first_idx + 1))
+tmux select-window -t $session:$node_idx
+tmux send-keys -t $session:$node_idx 'ping -c 5 10.10.10.13' C-m
+tmux send-keys -t $session:$node_idx 'iperf -c 10.10.10.13 -i 5 -t 120'
 
 tmux attach
