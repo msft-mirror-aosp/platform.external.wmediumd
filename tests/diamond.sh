@@ -101,12 +101,13 @@ tmux send-keys -t $session:$first_idx '../wmediumd/wmediumd -c diamond.cfg' C-m
 node_idx=$((first_idx + 4))
 tmux send-keys -t $session:$node_idx 'iperf -s' C-m
 
-# enable monitor and capture traffic as normal user so that capture file is not
-# owned by root
+# enable monitor
 tmux new-window -t $session
 cap_idx=$((first_idx + 5))
 tmux send-keys -t $session:$cap_idx 'ip link set hwsim0 up' C-m
-tmux send-keys -t $session:$cap_idx "sudo -u $SUDO_USER dumpcap -i hwsim0" C-m
+# capture traffic as normal user (if possible) or root 
+CAP_USER=${SUDO_USER:-root}
+tmux send-keys -t $session:$cap_idx "sudo -u $CAP_USER dumpcap -i hwsim0" C-m
 
 node_idx=$((first_idx + 1))
 tmux select-window -t $session:$node_idx
