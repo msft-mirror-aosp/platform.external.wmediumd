@@ -388,6 +388,18 @@ static int get_no_fading_signal(struct wmediumd *ctx)
 	return 0;
 }
 
+/* Existing link is from from -> to; copy to other dir */
+static void mirror_link(struct wmediumd *ctx, int from, int to)
+{
+	ctx->snr_matrix[ctx->num_stas * to + from] =
+		ctx->snr_matrix[ctx->num_stas * from + to];
+
+	if (ctx->error_prob_matrix) {
+		ctx->error_prob_matrix[ctx->num_stas * to + from] =
+			ctx->error_prob_matrix[ctx->num_stas * from + to];
+	}
+}
+
 /*
  *	Loads a config file into memory
  */
@@ -403,6 +415,7 @@ int load_config(struct wmediumd *ctx, const char *file, const char *per_file)
 	struct station *station;
 	const char *model_type_str;
 	float default_prob_value = 0.0;
+	bool *link_map = NULL;
 
 	/*initialize the config file*/
 	cf = &cfg;
@@ -554,6 +567,12 @@ int load_config(struct wmediumd *ctx, const char *file, const char *per_file)
 		}
 	}
 
+	link_map = calloc(sizeof(bool), count_ids * count_ids);
+	if (!link_map) {
+		w_flogf(ctx, LOG_ERR, stderr, "Out of memory\n");
+		goto fail;
+	}
+
 	/* read snr values */
 	for (i = 0; links && i < config_setting_length(links); i++) {
 		config_setting_t *link;
@@ -574,7 +593,7 @@ int load_config(struct wmediumd *ctx, const char *file, const char *per_file)
 			goto fail;
 		}
 		ctx->snr_matrix[ctx->num_stas * start + end] = snr;
-		ctx->snr_matrix[ctx->num_stas * end + start] = snr;
+		link_map[ctx->num_stas * start + end] = true;
 	}
 
 	/* initialize with default_prob */
@@ -610,10 +629,28 @@ int load_config(struct wmediumd *ctx, const char *file, const char *per_file)
 		}
 
 		ctx->error_prob_matrix[ctx->num_stas * start + end] =
-		ctx->error_prob_matrix[ctx->num_stas * end + start] =
 			error_prob_value;
+		link_map[ctx->num_stas * start + end] = true;
 	}
 
+	/*
+	 * If any links are specified in only one direction, mirror them,
+	 * making them symmetric.  If specified in both directions they
+	 * can be asymmetric.
+	 */
+	for (i = 0; i < ctx->num_stas; i++) {
+		for (j = 0; j < ctx->num_stas; j++) {
+			if (i == j)
+				continue;
+
+			if (link_map[ctx->num_stas * i + j] &&
+			    !link_map[ctx->num_stas * j + i]) {
+				mirror_link(ctx, i, j);
+			}
+		}
+	}
+
+	free(link_map);
 	config_destroy(cf);
 	return 0;
 
