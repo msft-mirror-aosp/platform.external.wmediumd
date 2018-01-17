@@ -86,7 +86,8 @@ model:
 
 The above configuration would assign 0% loss probability (perfect medium) to
 all frames flowing between nodes 0 and 2, and 100% loss probability to all
-other links.
+other links.  Unless both directions of a link are configured, the loss
+probability will be symmetric.
 
 This is a very simplistic model that does not take into account that losses
 depend on transmission rates and signal-to-noise ratio.  For that, keep reading.
@@ -109,6 +110,7 @@ ifaces :
 	links = (
 		(0, 1, 0),
 		(0, 2, 0),
+		(2, 0, 10),
 		(0, 3, 0),
 		(1, 2, 30),
 		(1, 3, 10),
@@ -116,10 +118,13 @@ ifaces :
 	);
 };
 ```
-
-The snr values configured this way are assumed to be symmetrical.
 The snr will affect the maximum data rates that are successfully transmitted
 over the link.
+
+If only one direction of a link is configured, then the link will be
+symmetric.  For asymmetric links, configure both directions, as in the
+above example where the path between 0 and 2 is usable in only one
+direction.
 
 The packet loss error probabilities are derived from this snr.  See function
 `get_error_prob_from_snr()`.  Or you can provide a packet-error-rate table like
