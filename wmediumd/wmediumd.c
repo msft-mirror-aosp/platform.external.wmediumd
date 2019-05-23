@@ -33,6 +33,7 @@
 #include <sys/timerfd.h>
 #include <errno.h>
 #include <limits.h>
+#include <unistd.h>
 
 #include "wmediumd.h"
 #include "ieee80211.h"
@@ -859,6 +860,9 @@ void print_help(int exval)
 static void timer_cb(int fd, short what, void *data)
 {
 	struct wmediumd *ctx = data;
+	uint64_t u;
+
+	read(fd, &u, sizeof(u));
 
 	ctx->move_stations(ctx);
 	deliver_expired_frames(ctx);
