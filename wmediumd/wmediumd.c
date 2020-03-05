@@ -348,10 +348,8 @@ void queue_frame(struct wmediumd *ctx, struct station *station,
 	frame->signal = snr + NOISE_LEVEL;
 
 	noack = frame_is_mgmt(frame) || is_multicast_ether_addr(dest);
-	double choice = -3.14;
 
-	if (use_fixed_random_value(ctx))
-		choice = drand48();
+	double choice = drand48();
 
 	for (i = 0; i < frame->tx_rates_count && !is_acked; i++) {
 
@@ -385,13 +383,16 @@ void queue_frame(struct wmediumd *ctx, struct station *station,
 				if (cw > queue->cw_max)
 					cw = queue->cw_max;
 			}
-			if (!use_fixed_random_value(ctx))
-				choice = drand48();
+
+			send_time += ack_time_usec;
+
 			if (choice > error_prob) {
 				is_acked = true;
 				break;
 			}
-			send_time += ack_time_usec;
+
+			if (!use_fixed_random_value(ctx))
+				choice = drand48();
 		}
 	}
 
