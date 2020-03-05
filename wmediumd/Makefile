@@ -8,6 +8,7 @@ NL31FOUND := $(shell $(PKG_CONFIG) --exact-version=3.1 libnl-3.1 && echo Y)
 NL3xFOUND := $(shell $(PKG_CONFIG) --atleast-version=3.2 libnl-3.0 && echo Y)
 
 CFLAGS += -g -Wall -Wextra -Wno-unused-parameter -O2
+CFLAGS += -MMD -MP
 LDFLAGS += -levent -lm
 
 ifeq ($(NL2FOUND),Y)
@@ -53,6 +54,9 @@ all: wmediumd
 
 wmediumd: $(OBJECTS) 
 	$(CC) -o $@ $(OBJECTS) $(LDFLAGS) 
- 
+
+DEPS := $(patsubst %.o,%.d,$(OBJECTS))
 clean: 
-	rm -f $(OBJECTS) wmediumd
+	rm -f $(OBJECTS) $(DEPS) wmediumd
+
+-include *.d
