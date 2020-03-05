@@ -144,6 +144,25 @@ struct station {
 	int tx_power;			/* transmission power [dBm] */
 	struct wqueue queues[IEEE80211_NUM_ACS];
 	struct list_head list;
+	struct client *client;
+};
+
+enum client_type {
+	CLIENT_NETLINK,
+	CLIENT_VHOST_USER,
+};
+
+struct client {
+	struct list_head list;
+	enum client_type type;
+
+	/*
+	 * There's no additional data for the netlink client, we
+	 * just have it as such for the link from struct station.
+	 */
+
+	/* for vhost-user */
+	struct usfstl_vhost_user_dev *dev;
 };
 
 struct wmediumd {
@@ -151,6 +170,9 @@ struct wmediumd {
 
 	struct nl_sock *sock;
 	struct usfstl_loop_entry nl_loop;
+
+	struct list_head clients;
+	struct client nl_client;
 
 	int num_stas;
 	struct list_head stations;
@@ -188,6 +210,7 @@ struct hwsim_tx_rate {
 struct frame {
 	struct list_head list;		/* frame queue list */
 	struct usfstl_job job;
+	struct client *src, *dest;
 	bool acked;
 	u64 cookie;
 	u32 freq;

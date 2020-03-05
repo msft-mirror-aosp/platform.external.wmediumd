@@ -438,7 +438,7 @@ int load_config(struct wmediumd *ctx, const char *file, const char *per_file)
 	w_logf(ctx, LOG_NOTICE, "#_if = %d\n", count_ids);
 
 	/* Fill the mac_addr */
-	ctx->sta_array = malloc(sizeof(struct station *) * count_ids);
+	ctx->sta_array = calloc(count_ids, sizeof(struct station *));
 	if (!ctx->sta_array) {
 		w_flogf(ctx, LOG_ERR, stderr, "Out of memory(sta_array)!\n");
 		return -ENOMEM;
@@ -448,7 +448,7 @@ int load_config(struct wmediumd *ctx, const char *file, const char *per_file)
 		const char *str =  config_setting_get_string_elem(ids, i);
 		string_to_mac_address(str, addr);
 
-		station = malloc(sizeof(*station));
+		station = calloc(1, sizeof(*station));
 		if (!station) {
 			w_flogf(ctx, LOG_ERR, stderr, "Out of memory!\n");
 			return -ENOMEM;
