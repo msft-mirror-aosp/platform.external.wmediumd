@@ -7,9 +7,10 @@ NL3FOUND := $(shell $(PKG_CONFIG) --atleast-version=3 libnl-3.0 && echo Y)
 NL31FOUND := $(shell $(PKG_CONFIG) --exact-version=3.1 libnl-3.1 && echo Y)
 NL3xFOUND := $(shell $(PKG_CONFIG) --atleast-version=3.2 libnl-3.0 && echo Y)
 
-CFLAGS += -g -Wall -Wextra -Wno-unused-parameter -O2
+CFLAGS += -g -Wall -Wextra -Wno-unused-parameter -O2 -Iinc
 CFLAGS += -MMD -MP
-LDFLAGS += -levent -lm
+CFLAGS += -Wno-format-zero-length
+LDFLAGS += -lm
 
 ifeq ($(NL2FOUND),Y)
 CFLAGS += -DCONFIG_LIBNL20
@@ -49,6 +50,8 @@ CFLAGS += $(shell $(PKG_CONFIG) --cflags $(NLLIBNAME))
 CFLAGS+=-DVERSION_STR=$(VERSION_STR)
 LDFLAGS+=-lconfig 
 OBJECTS=wmediumd.o config.o per.o
+OBJECTS += lib/loop.o lib/sched.o lib/schedctrl.o
+OBJECTS += lib/uds.o lib/vhost.o lib/wallclock.o
 
 all: wmediumd 
 
@@ -59,4 +62,4 @@ DEPS := $(patsubst %.o,%.d,$(OBJECTS))
 clean: 
 	rm -f $(OBJECTS) $(DEPS) wmediumd
 
--include *.d
+-include *.d lib/*.d
