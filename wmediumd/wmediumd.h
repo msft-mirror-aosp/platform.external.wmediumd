@@ -1,6 +1,7 @@
 /*
  *	wmediumd, wireless medium simulator for mac80211_hwsim kernel module
  *	Copyright (c) 2011 cozybit Inc.
+ *	Copyright (C) 2020 Intel Corporation
  *
  *	Author:	Javier Lopez	<jlopex@cozybit.com>
  *		Javier Cardona	<javier@cozybit.com>
@@ -104,6 +105,7 @@ enum {
 #include <stdint.h>
 #include <stdbool.h>
 #include <syslog.h>
+#include <usfstl/sched.h>
 
 #include "list.h"
 #include "ieee80211.h"
@@ -125,6 +127,8 @@ typedef uint64_t u64;
 #define NOISE_LEVEL	(-91)
 #define CCA_THRESHOLD	(-90)
 
+extern struct usfstl_scheduler scheduler;
+
 struct wqueue {
 	struct list_head frames;
 	int cw_min;
@@ -140,12 +144,35 @@ struct station {
 	int tx_power;			/* transmission power [dBm] */
 	struct wqueue queues[IEEE80211_NUM_ACS];
 	struct list_head list;
+	struct client *client;
+};
+
+enum client_type {
+	CLIENT_NETLINK,
+	CLIENT_VHOST_USER,
+};
+
+struct client {
+	struct list_head list;
+	enum client_type type;
+
+	/*
+	 * There's no additional data for the netlink client, we
+	 * just have it as such for the link from struct station.
+	 */
+
+	/* for vhost-user */
+	struct usfstl_vhost_user_dev *dev;
 };
 
 struct wmediumd {
 	int timerfd;
 
 	struct nl_sock *sock;
+	struct usfstl_loop_entry nl_loop;
+
+	struct list_head clients;
+	struct client nl_client;
 
 	int num_stas;
 	struct list_head stations;
@@ -153,9 +180,8 @@ struct wmediumd {
 	int *snr_matrix;
 	double *error_prob_matrix;
 	struct intf_info *intf;
-	struct timespec intf_updated;
+	struct usfstl_job intf_job, move_job;
 #define MOVE_INTERVAL	(3) /* station movement interval [sec] */
-	struct timespec next_move;
 	void *path_loss_param;
 	float *per_matrix;
 	int per_matrix_row_num;
@@ -171,7 +197,6 @@ struct wmediumd {
 				 int, struct station *, struct station *);
 	int (*calc_path_loss)(void *, struct station *,
 			      struct station *);
-	void (*move_stations)(struct wmediumd *);
 	int (*get_fading_signal)(struct wmediumd *);
 
 	u8 log_lvl;
@@ -184,7 +209,8 @@ struct hwsim_tx_rate {
 
 struct frame {
 	struct list_head list;		/* frame queue list */
-	struct timespec expires;	/* frame delivery (absolute) */
+	struct usfstl_job job;
+	struct client *src, *dest;
 	bool acked;
 	u64 cookie;
 	u32 freq;
@@ -217,7 +243,6 @@ struct intf_info {
 void station_init_queues(struct station *station);
 double get_error_prob_from_snr(double snr, unsigned int rate_idx, u32 freq,
 			       int frame_len);
-bool timespec_before(struct timespec *t1, struct timespec *t2);
 int set_default_per(struct wmediumd *ctx);
 int read_per_file(struct wmediumd *ctx, const char *file_name);
 int w_logf(struct wmediumd *ctx, u8 level, const char *format, ...);
