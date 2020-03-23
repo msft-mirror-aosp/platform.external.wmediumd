@@ -506,7 +506,7 @@ static void send_cloned_frame_msg(struct wmediumd *ctx, struct station *dst,
 	    nla_put(msg, HWSIM_ATTR_FRAME, data_len, data) ||
 	    nla_put_u32(msg, HWSIM_ATTR_RX_RATE, 1) ||
 	    nla_put_u32(msg, HWSIM_ATTR_FREQ, freq) ||
-	    nla_put_u32(msg, HWSIM_ATTR_SIGNAL, -50)) {
+	    nla_put_u32(msg, HWSIM_ATTR_SIGNAL, signal)) {
 		w_logf(ctx, LOG_ERR, "%s: Failed to fill a payload\n", __func__);
 		goto out;
 	}
