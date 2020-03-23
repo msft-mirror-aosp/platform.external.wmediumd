@@ -39,10 +39,12 @@
 #include <usfstl/sched.h>
 #include <usfstl/schedctrl.h>
 #include <usfstl/vhost.h>
+#include <usfstl/uds.h>
 
 #include "wmediumd.h"
 #include "ieee80211.h"
 #include "config.h"
+#include "api.h"
 
 USFSTL_SCHEDULER(scheduler);
 
@@ -381,6 +383,7 @@ static void wmediumd_send_to_client(struct wmediumd *ctx,
 				    struct client *client,
 				    struct nl_msg *msg)
 {
+	struct wmediumd_message_header hdr;
 	size_t len;
 	int ret;
 
@@ -394,6 +397,15 @@ static void wmediumd_send_to_client(struct wmediumd *ctx,
 		len = nlmsg_total_size(nlmsg_datalen(nlmsg_hdr(msg)));
 		usfstl_vhost_user_dev_notify(client->dev, HWSIM_VQ_RX,
 					     (void *)nlmsg_hdr(msg), len);
+		break;
+	case CLIENT_API_SOCK:
+		len = nlmsg_total_size(nlmsg_datalen(nlmsg_hdr(msg)));
+		hdr.type = WMEDIUMD_MSG_NETLINK;
+		hdr.data_len = len;
+		write(client->loop.fd, &hdr, sizeof(hdr));
+		write(client->loop.fd, (void *)nlmsg_hdr(msg), len);
+		/* read the ACK back */
+		read(client->loop.fd, &hdr, sizeof(hdr));
 		break;
 	}
 }
@@ -758,6 +770,93 @@ static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {
 	.disconnected = wmediumd_vu_disconnected,
 };
 
+static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
+{
+	struct client *client = container_of(entry, struct client, loop);
+	struct wmediumd *ctx = entry->data;
+	struct wmediumd_message_header hdr;
+	enum wmediumd_message response = WMEDIUMD_MSG_ACK;
+	struct nl_msg *nlmsg;
+	unsigned char *data;
+	ssize_t len;
+
+	len = read(entry->fd, &hdr, sizeof(hdr));
+	if (len != sizeof(hdr))
+		goto disconnect;
+
+	/* safety valve */
+	if (hdr.data_len > 1024 * 1024)
+		goto disconnect;
+
+	data = malloc(hdr.data_len);
+	if (!data)
+		goto disconnect;
+
+	len = read(entry->fd, data, hdr.data_len);
+	if (len != hdr.data_len)
+		goto disconnect;
+
+	switch (hdr.type) {
+	case WMEDIUMD_MSG_REGISTER:
+		if (!list_empty(&client->list)) {
+			response = WMEDIUMD_MSG_INVALID;
+			break;
+		}
+		list_add(&client->list, &ctx->clients);
+		break;
+	case WMEDIUMD_MSG_UNREGISTER:
+		if (list_empty(&client->list)) {
+			response = WMEDIUMD_MSG_INVALID;
+			break;
+		}
+		list_del_init(&client->list);
+		break;
+	case WMEDIUMD_MSG_NETLINK:
+		if (!nlmsg_ok((const struct nlmsghdr *)data, len)) {
+			response = WMEDIUMD_MSG_INVALID;
+			break;
+		}
+
+		nlmsg = nlmsg_convert((struct nlmsghdr *)data);
+		if (!nlmsg)
+			break;
+
+		_process_messages(nlmsg, ctx, client);
+
+		nlmsg_free(nlmsg);
+		break;
+	default:
+		response = WMEDIUMD_MSG_INVALID;
+		break;
+	}
+
+	/* return a response */
+	hdr.type = response;
+	hdr.data_len = 0;
+	len = write(entry->fd, &hdr, sizeof(hdr));
+	if (len != sizeof(hdr))
+		goto disconnect;
+
+	return;
+disconnect:
+	usfstl_loop_unregister(&client->loop);
+	wmediumd_remove_client(ctx, client);
+}
+
+static void wmediumd_api_connected(int fd, void *data)
+{
+	struct wmediumd *ctx = data;
+	struct client *client;
+
+	client = calloc(1, sizeof(*client));
+	client->type = CLIENT_API_SOCK;
+	client->loop.fd = fd;
+	client->loop.data = ctx;
+	client->loop.handler = wmediumd_api_handler;
+	usfstl_loop_register(&client->loop);
+	INIT_LIST_HEAD(&client->list);
+}
+
 /*
  * Register with the kernel to start receiving new frames.
  */
@@ -862,6 +961,7 @@ void print_help(int exval)
 	printf("  -x FILE         set input PER file\n");
 	printf("  -t socket       set the time control socket\n");
 	printf("  -u socket       expose vhost-user socket, don't use netlink\n");
+	printf("  -a socket       expose wmediumd API socket\n");
 	printf("  -n              force netlink use even with vhost-user\n");
 
 	exit(exval);
@@ -873,7 +973,7 @@ int main(int argc, char *argv[])
 	struct wmediumd ctx = {};
 	char *config_file = NULL;
 	char *per_file = NULL;
-	const char *time_socket = NULL;
+	const char *time_socket = NULL, *api_socket = NULL;
 	struct usfstl_sched_ctrl ctrl = {};
 	struct usfstl_vhost_user_server vusrv = {
 		.ops = &wmediumd_vu_ops,
@@ -896,7 +996,7 @@ int main(int argc, char *argv[])
 	unsigned long int parse_log_lvl;
 	char* parse_end_token;
 
-	while ((opt = getopt(argc, argv, "hVc:l:x:t:u:n")) != -1) {
+	while ((opt = getopt(argc, argv, "hVc:l:x:t:u:a:n")) != -1) {
 		switch (opt) {
 		case 'h':
 			print_help(EXIT_SUCCESS);
@@ -933,6 +1033,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'u':
 			vusrv.socket = optarg;
+			break;
+		case 'a':
+			api_socket = optarg;
 			break;
 		case 'n':
 			force_netlink = true;
@@ -1003,6 +1106,9 @@ int main(int argc, char *argv[])
 		if (send_register_msg(&ctx) == 0)
 			w_logf(&ctx, LOG_NOTICE, "REGISTER SENT!\n");
 	}
+
+	if (api_socket)
+		usfstl_uds_create(api_socket, wmediumd_api_connected, &ctx);
 
 	while (1) {
 		if (time_socket) {

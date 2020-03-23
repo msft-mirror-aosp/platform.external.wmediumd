@@ -150,6 +150,7 @@ struct station {
 enum client_type {
 	CLIENT_NETLINK,
 	CLIENT_VHOST_USER,
+	CLIENT_API_SOCK,
 };
 
 struct client {
@@ -163,6 +164,9 @@ struct client {
 
 	/* for vhost-user */
 	struct usfstl_vhost_user_dev *dev;
+
+	/* for API socket */
+	struct usfstl_loop_entry loop;
 };
 
 struct wmediumd {
