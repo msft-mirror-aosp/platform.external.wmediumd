@@ -321,7 +321,7 @@ static void queue_frame(struct wmediumd *ctx, struct station *station,
 	}
 	frame->signal = snr + NOISE_LEVEL;
 
-	noack = frame_is_mgmt(frame) || is_multicast_ether_addr(dest);
+	noack = is_multicast_ether_addr(dest);
 
 	double choice = drand48();
 
