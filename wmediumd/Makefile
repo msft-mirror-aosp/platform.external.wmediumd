@@ -53,6 +53,12 @@ OBJECTS=wmediumd.o config.o per.o
 OBJECTS += lib/loop.o lib/sched.o lib/schedctrl.o
 OBJECTS += lib/uds.o lib/vhost.o lib/wallclock.o
 
+ifeq ($(SANITIZE),1)
+CFLAGS += -fsanitize=undefined,address
+# apparently these have to come first for some reason
+override LDFLAGS := -lasan -lubsan $(LDFLAGS)
+endif
+
 all: wmediumd 
 
 wmediumd: $(OBJECTS) 
