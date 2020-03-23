@@ -368,7 +368,6 @@ void queue_frame(struct wmediumd *ctx, struct station *station,
 	target += send_time;
 
 	frame->duration = send_time;
-	frame->dest = deststa ? deststa->client : NULL;
 	frame->src = station->client;
 	frame->job.start = target;
 	frame->job.callback = wmediumd_deliver_frame;
@@ -397,6 +396,37 @@ static void wmediumd_send_to_client(struct wmediumd *ctx,
 					     (void *)nlmsg_hdr(msg), len);
 		break;
 	}
+}
+
+static void wmediumd_remove_client(struct wmediumd *ctx, struct client *client)
+{
+	struct frame *frame, *tmp;
+	struct wqueue *queue;
+	struct station *station;
+	int ac;
+
+	list_for_each_entry(station, &ctx->stations, list) {
+		if (station->client == client)
+			station->client = NULL;
+	}
+
+	list_for_each_entry(station, &ctx->stations, list) {
+		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++) {
+			queue = &station->queues[ac];
+			list_for_each_entry_safe(frame, tmp, &queue->frames,
+						 list) {
+				if (frame->src == client) {
+					list_del(&frame->list);
+					usfstl_sched_del_job(&frame->job);
+					free(frame);
+				}
+			}
+		}
+	}
+
+	if (!list_empty(&client->list))
+		list_del(&client->list);
+	free(client);
 }
 
 /*
@@ -719,8 +749,7 @@ static void wmediumd_vu_disconnected(struct usfstl_vhost_user_dev *dev)
 	struct client *client = dev->data;
 
 	dev->data = NULL;
-	list_del(&client->list);
-	free(client);
+	wmediumd_remove_client(dev->server->data, client);
 }
 
 static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {

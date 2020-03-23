@@ -210,7 +210,7 @@ struct hwsim_tx_rate {
 struct frame {
 	struct list_head list;		/* frame queue list */
 	struct usfstl_job job;
-	struct client *src, *dest;
+	struct client *src;
 	bool acked;
 	u64 cookie;
 	u32 freq;
