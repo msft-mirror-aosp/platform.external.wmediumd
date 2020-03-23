@@ -29,9 +29,19 @@
 #define HWSIM_TX_CTL_NO_ACK		(1 << 1)
 #define HWSIM_TX_STAT_ACK		(1 << 2)
 
-#define HWSIM_CMD_REGISTER 1
-#define HWSIM_CMD_FRAME 2
-#define HWSIM_CMD_TX_INFO_FRAME 3
+enum {
+	HWSIM_CMD_UNSPEC,
+	HWSIM_CMD_REGISTER,
+	HWSIM_CMD_FRAME,
+	HWSIM_CMD_TX_INFO_FRAME,
+	HWSIM_CMD_NEW_RADIO,
+	HWSIM_CMD_DEL_RADIO,
+	HWSIM_CMD_GET_RADIO,
+	HWSIM_CMD_ADD_MAC_ADDR,
+	HWSIM_CMD_DEL_MAC_ADDR,
+	__HWSIM_CMD_MAX,
+};
+#define HWSIM_CMD_MAX (_HWSIM_CMD_MAX - 1)
 
 /**
  * enum hwsim_attrs - hwsim netlink attributes
@@ -135,6 +145,10 @@ struct wqueue {
 	int cw_max;
 };
 
+struct addr {
+	u8 addr[ETH_ALEN];
+};
+
 struct station {
 	int index;
 	u8 addr[ETH_ALEN];		/* virtual interface mac address */
@@ -145,6 +159,8 @@ struct station {
 	struct wqueue queues[IEEE80211_NUM_ACS];
 	struct list_head list;
 	struct client *client;
+	unsigned int n_addrs;
+	struct addr *addrs;
 };
 
 enum client_type {

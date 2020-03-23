@@ -238,6 +238,32 @@ static struct station *get_station_by_addr(struct wmediumd *ctx, u8 *addr)
 	return NULL;
 }
 
+static bool station_has_addr(struct station *station, const u8 *addr)
+{
+	unsigned int i;
+
+	if (memcmp(station->addr, addr, ETH_ALEN) == 0)
+		return true;
+
+	for (i = 0; i < station->n_addrs; i++) {
+		if (memcmp(station->addrs[i].addr, addr, ETH_ALEN) == 0)
+			return true;
+	}
+
+	return false;
+}
+
+static struct station *get_station_by_used_addr(struct wmediumd *ctx, u8 *addr)
+{
+	struct station *station;
+
+	list_for_each_entry(station, &ctx->stations, list) {
+		if (station_has_addr(station, addr))
+			return station;
+	}
+	return NULL;
+}
+
 static void queue_frame(struct wmediumd *ctx, struct station *station,
 			struct frame *frame)
 {
@@ -285,7 +311,7 @@ static void queue_frame(struct wmediumd *ctx, struct station *station,
 	if (is_multicast_ether_addr(dest)) {
 		deststa = NULL;
 	} else {
-		deststa = get_station_by_addr(ctx, dest);
+		deststa = get_station_by_used_addr(ctx, dest);
 		if (deststa) {
 			snr = ctx->get_link_snr(ctx, station, deststa) -
 				get_signal_offset_by_interference(ctx,
@@ -586,7 +612,7 @@ static void wmediumd_deliver_frame(struct usfstl_job *job)
 						      1, signal,
 						      frame->freq);
 
-			} else if (memcmp(dest, station->addr, ETH_ALEN) == 0) {
+			} else if (station_has_addr(station, dest)) {
 				if (set_interference_duration(ctx,
 					frame->sender->index, frame->duration,
 					frame->signal))
@@ -657,13 +683,16 @@ static void _process_messages(struct nl_msg *msg,
 	struct station *sender;
 	struct frame *frame;
 	struct ieee80211_hdr *hdr;
-	u8 *src;
+	u8 *src, *hwaddr, *addr;
+	void *new;
+	unsigned int i;
 
-	if (gnlh->cmd == HWSIM_CMD_FRAME) {
-		/* we get the attributes*/
-		genlmsg_parse(nlh, 0, attrs, HWSIM_ATTR_MAX, NULL);
+	genlmsg_parse(nlh, 0, attrs, HWSIM_ATTR_MAX, NULL);
+
+	switch (gnlh->cmd) {
+	case HWSIM_CMD_FRAME:
 		if (attrs[HWSIM_ATTR_ADDR_TRANSMITTER]) {
-			u8 *hwaddr = (u8 *)nla_data(attrs[HWSIM_ATTR_ADDR_TRANSMITTER]);
+			hwaddr = (u8 *)nla_data(attrs[HWSIM_ATTR_ADDR_TRANSMITTER]);
 
 			unsigned int data_len =
 				nla_len(attrs[HWSIM_ATTR_FRAME]);
@@ -687,12 +716,18 @@ static void _process_messages(struct nl_msg *msg,
 			if (data_len < 6 + 6 + 4)
 				return;
 
-			sender = get_station_by_addr(ctx, src);
+			sender = get_station_by_addr(ctx, hwaddr);
 			if (!sender) {
-				w_flogf(ctx, LOG_ERR, stderr, "Unable to find sender station " MAC_FMT "\n", MAC_ARGS(src));
-				return;
+				sender = get_station_by_used_addr(ctx, src);
+				if (!sender) {
+					w_flogf(ctx, LOG_ERR, stderr,
+						"Unable to find sender station by src=" MAC_FMT " nor hwaddr=" MAC_FMT "\n",
+						MAC_ARGS(src), MAC_ARGS(hwaddr));
+					return;
+				}
+				memcpy(sender->hwaddr, hwaddr, ETH_ALEN);
 			}
-			memcpy(sender->hwaddr, hwaddr, ETH_ALEN);
+
 			if (!sender->client)
 				sender->client = client;
 
@@ -712,6 +747,46 @@ static void _process_messages(struct nl_msg *msg,
 			       min(tx_rates_len, sizeof(frame->tx_rates)));
 			queue_frame(ctx, sender, frame);
 		}
+		break;
+	case HWSIM_CMD_ADD_MAC_ADDR:
+		if (!attrs[HWSIM_ATTR_ADDR_TRANSMITTER] ||
+		    !attrs[HWSIM_ATTR_ADDR_RECEIVER])
+			break;
+		hwaddr = (u8 *)nla_data(attrs[HWSIM_ATTR_ADDR_TRANSMITTER]);
+		addr = (u8 *)nla_data(attrs[HWSIM_ATTR_ADDR_RECEIVER]);
+		sender = get_station_by_addr(ctx, hwaddr);
+		if (!sender)
+			break;
+		for (i = 0; i < sender->n_addrs; i++) {
+			if (memcmp(sender->addrs[i].addr, addr, ETH_ALEN) == 0)
+				return;
+		}
+		new = realloc(sender->addrs, ETH_ALEN * (sender->n_addrs + 1));
+		if (!new)
+			break;
+		sender->addrs = new;
+		memcpy(sender->addrs[sender->n_addrs].addr, addr, ETH_ALEN);
+		sender->n_addrs += 1;
+		break;
+	case HWSIM_CMD_DEL_MAC_ADDR:
+		if (!attrs[HWSIM_ATTR_ADDR_TRANSMITTER] ||
+		    !attrs[HWSIM_ATTR_ADDR_RECEIVER])
+			break;
+		hwaddr = (u8 *)nla_data(attrs[HWSIM_ATTR_ADDR_TRANSMITTER]);
+		addr = (u8 *)nla_data(attrs[HWSIM_ATTR_ADDR_RECEIVER]);
+		sender = get_station_by_addr(ctx, hwaddr);
+		if (!sender)
+			break;
+		for (i = 0; i < sender->n_addrs; i++) {
+			if (memcmp(sender->addrs[i].addr, addr, ETH_ALEN))
+				continue;
+			sender->n_addrs -= 1;
+			memmove(sender->addrs[i].addr,
+				sender->addrs[sender->n_addrs].addr,
+				ETH_ALEN);
+			break;
+		}
+		break;
 	}
 }
 
