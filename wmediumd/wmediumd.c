@@ -222,7 +222,7 @@ static int get_signal_offset_by_interference(struct wmediumd *ctx, int src_idx,
 	return (int)(milliwatt_to_dBm(intf_power) + 0.5);
 }
 
-bool is_multicast_ether_addr(const u8 *addr)
+static bool is_multicast_ether_addr(const u8 *addr)
 {
 	return 0x01 & addr[0];
 }
@@ -238,8 +238,8 @@ static struct station *get_station_by_addr(struct wmediumd *ctx, u8 *addr)
 	return NULL;
 }
 
-void queue_frame(struct wmediumd *ctx, struct station *station,
-		 struct frame *frame)
+static void queue_frame(struct wmediumd *ctx, struct station *station,
+			struct frame *frame)
 {
 	struct ieee80211_hdr *hdr = (void *)frame->data;
 	u8 *dest = hdr->addr1;
@@ -527,7 +527,7 @@ out:
 	nlmsg_free(msg);
 }
 
-void wmediumd_deliver_frame(struct usfstl_job *job)
+static void wmediumd_deliver_frame(struct usfstl_job *job)
 {
 	struct wmediumd *ctx = job->data;
 	struct frame *frame = container_of(job, struct frame, job);
@@ -608,7 +608,7 @@ void wmediumd_deliver_frame(struct usfstl_job *job)
 	free(frame);
 }
 
-void wmediumd_intf_update(struct usfstl_job *job)
+static void wmediumd_intf_update(struct usfstl_job *job)
 {
 	struct wmediumd *ctx = job->data;
 	int i, j;
@@ -860,7 +860,7 @@ static void wmediumd_api_connected(int fd, void *data)
 /*
  * Register with the kernel to start receiving new frames.
  */
-int send_register_msg(struct wmediumd *ctx)
+static int send_register_msg(struct wmediumd *ctx)
 {
 	struct nl_sock *sock = ctx->sock;
 	struct nl_msg *msg;
@@ -943,7 +943,7 @@ static int init_netlink(struct wmediumd *ctx)
 /*
  *	Print the CLI help
  */
-void print_help(int exval)
+static void print_help(int exval)
 {
 	printf("wmediumd v%s - a wireless medium simulator\n", VERSION_STR);
 	printf("wmediumd [-h] [-V] [-l LOG_LVL] [-x FILE] -c FILE \n\n");
