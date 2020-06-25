@@ -1181,18 +1181,6 @@ int main(int argc, char *argv[])
 		usfstl_sched_add_job(&scheduler, &ctx.intf_job);
 	}
 
-	if (time_socket) {
-		usfstl_sched_ctrl_start(&ctrl, time_socket,
-				      1000 /* nsec per usec */,
-				      (uint64_t)-1 /* no ID */,
-				      &scheduler);
-		vusrv.scheduler = &scheduler;
-		vusrv.ctrl = &ctrl;
-		ctx.ctrl = &ctrl;
-	} else {
-		usfstl_sched_wallclock_init(&scheduler, 1000);
-	}
-
 	if (vusrv.socket)
 		usfstl_vhost_user_server_start(&vusrv);
 
@@ -1212,6 +1200,18 @@ int main(int argc, char *argv[])
 
 	if (api_socket)
 		usfstl_uds_create(api_socket, wmediumd_api_connected, &ctx);
+
+	if (time_socket) {
+		usfstl_sched_ctrl_start(&ctrl, time_socket,
+				      1000 /* nsec per usec */,
+				      (uint64_t)-1 /* no ID */,
+				      &scheduler);
+		vusrv.scheduler = &scheduler;
+		vusrv.ctrl = &ctrl;
+		ctx.ctrl = &ctrl;
+	} else {
+		usfstl_sched_wallclock_init(&scheduler, 1000);
+	}
 
 	while (1) {
 		if (time_socket) {
