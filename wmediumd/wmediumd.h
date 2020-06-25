@@ -227,6 +227,8 @@ struct wmediumd {
 	u8 log_lvl;
 
 	u32 need_start_notify;
+
+	FILE *pcap_file;
 };
 
 struct hwsim_tx_rate {

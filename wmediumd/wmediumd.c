@@ -36,6 +36,7 @@
 #include <limits.h>
 #include <unistd.h>
 #include <stdarg.h>
+#include <endian.h>
 #include <usfstl/loop.h>
 #include <usfstl/sched.h>
 #include <usfstl/schedctrl.h>
@@ -309,6 +310,48 @@ static void wmediumd_notify_frame_start(struct usfstl_job *job)
 	}
 }
 
+static void log2pcap(struct wmediumd *ctx, struct frame *frame, uint64_t ts)
+{
+	struct {
+		uint8_t it_version;
+		uint8_t it_pad;
+		uint16_t it_len;
+		uint32_t it_present;
+		struct {
+			uint16_t freq, flags;
+		} channel;
+		uint8_t signal;
+	} __attribute__((packed)) radiotap_hdr = {
+		.it_len = htole16(sizeof(radiotap_hdr)),
+		.it_present = htole32(1 << 3 /* channel */ |
+				      1 << 5 /* signal dBm */),
+		.channel.freq = htole16(frame->freq),
+		.signal = frame->signal,
+	};
+	struct {
+		uint32_t type, blocklen, ifidx, ts_hi, ts_lo, caplen, pktlen;
+	} __attribute__((packed)) blockhdr = {
+		.type = 6,
+		.ts_hi = ts / (1ULL << 32),
+		.ts_lo = ts,
+		.caplen = frame->data_len + sizeof(radiotap_hdr),
+		.pktlen = frame->data_len + sizeof(radiotap_hdr),
+	};
+	static const uint8_t pad[3];
+	uint32_t sz, align;
+
+	sz = blockhdr.caplen + sizeof(blockhdr) + sizeof(uint32_t);
+	blockhdr.blocklen = (sz + 3) & ~3;
+	align = blockhdr.blocklen - sz;
+
+	fwrite(&blockhdr, sizeof(blockhdr), 1, ctx->pcap_file);
+	fwrite(&radiotap_hdr, sizeof(radiotap_hdr), 1, ctx->pcap_file);
+	fwrite(frame->data, frame->data_len, 1, ctx->pcap_file);
+	fwrite(pad, align, 1, ctx->pcap_file);
+	fwrite(&blockhdr.blocklen, sizeof(blockhdr.blocklen), 1, ctx->pcap_file);
+	fflush(ctx->pcap_file);
+}
+
 static void queue_frame(struct wmediumd *ctx, struct station *station,
 			struct frame *frame)
 {
@@ -435,6 +478,29 @@ static void queue_frame(struct wmediumd *ctx, struct station *station,
 						       struct frame, list);
 			if (tail && target < tail->job.start)
 				target = tail->job.start;
+		}
+	}
+
+	if (ctx->pcap_file) {
+		log2pcap(ctx, frame, target);
+
+		if (is_acked && !noack) {
+			struct {
+				struct frame frame;
+				uint16_t fc;
+				uint16_t dur;
+				uint8_t ra[6];
+			} __attribute__((packed, aligned(8))) ack = {
+				.fc = htole16(0xd4),
+				.dur = htole16(ack_time_usec),
+			};
+
+			memcpy(&ack.frame, frame, sizeof(ack.frame));
+			ack.frame.data_len = 10;
+			memcpy(ack.ra, frame->data + 10, 6);
+
+			log2pcap(ctx, &ack.frame,
+				 target + send_time - ack_time_usec);
 		}
 	}
 
@@ -1141,8 +1207,56 @@ static void print_help(int exval)
 	printf("  -u socket       expose vhost-user socket, don't use netlink\n");
 	printf("  -a socket       expose wmediumd API socket\n");
 	printf("  -n              force netlink use even with vhost-user\n");
+	printf("  -p FILE         log packets to pcapng file FILE\n");
 
 	exit(exval);
+}
+
+static void init_pcapng(struct wmediumd *ctx, const char *filename)
+{
+	struct {
+		uint32_t type, blocklen, byte_order;
+		uint16_t ver_maj, ver_min;
+		uint64_t seclen;
+		uint32_t blocklen2;
+	} __attribute__((packed)) blockhdr = {
+		.type = 0x0A0D0D0A,
+		.blocklen = sizeof(blockhdr),
+		.byte_order = 0x1A2B3C4D,
+		.ver_maj = 1,
+		.ver_min = 0,
+		.seclen = -1,
+		.blocklen2 = sizeof(blockhdr),
+	};
+	struct {
+		uint32_t type, blocklen;
+		uint16_t linktype, reserved;
+		uint32_t snaplen;
+		struct {
+			uint16_t code, len;
+			uint8_t val, pad[3];
+		} opt_if_tsresol;
+		struct {
+			uint16_t code, len;
+		} opt_endofopt;
+		uint32_t blocklen2;
+	} __attribute__((packed)) idb = {
+		.type = 1,
+		.blocklen = sizeof(idb),
+		.linktype = 127, // radiotap
+		.snaplen = -1,
+		.opt_if_tsresol.code = 9,
+		.opt_if_tsresol.len = 1,
+		.opt_if_tsresol.val = 6, // usec
+		.blocklen2 = sizeof(idb),
+	};
+
+	if (!filename)
+		return;
+
+	ctx->pcap_file = fopen(filename, "w+");
+	fwrite(&blockhdr, sizeof(blockhdr), 1, ctx->pcap_file);
+	fwrite(&idb, sizeof(idb), 1, ctx->pcap_file);
 }
 
 int main(int argc, char *argv[])
@@ -1174,7 +1288,7 @@ int main(int argc, char *argv[])
 	unsigned long int parse_log_lvl;
 	char* parse_end_token;
 
-	while ((opt = getopt(argc, argv, "hVc:l:x:t:u:a:n")) != -1) {
+	while ((opt = getopt(argc, argv, "hVc:l:x:t:u:a:np:")) != -1) {
 		switch (opt) {
 		case 'h':
 			print_help(EXIT_SUCCESS);
@@ -1217,6 +1331,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'n':
 			force_netlink = true;
+			break;
+		case 'p':
+			init_pcapng(&ctx, optarg);
 			break;
 		case '?':
 			printf("wmediumd: Error - No such option: "
