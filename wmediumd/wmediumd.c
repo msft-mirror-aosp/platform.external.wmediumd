@@ -606,11 +606,12 @@ static void send_cloned_frame_msg(struct wmediumd *ctx, struct client *src,
 
 	list_for_each_entry(client, &ctx->clients, list) {
 		if (client->flags & WMEDIUMD_CTL_RX_ALL_FRAMES) {
-			if (!cmsg) {
-				cmsg = nlmsg_convert(nlmsg_hdr(msg));
-				if (!cmsg)
-					continue;
-				nla_put_u64(msg, HWSIM_ATTR_COOKIE, cookie);
+			if (src == client && !cmsg) {
+				struct nlmsghdr *nlh = nlmsg_hdr(msg);
+
+				cmsg = nlmsg_inherit(nlh);
+				nlmsg_append(cmsg, nlmsg_data(nlh), nlmsg_datalen(nlh), 0);
+				assert(nla_put_u64(cmsg, HWSIM_ATTR_COOKIE, cookie) == 0);
 			}
 			wmediumd_send_to_client(ctx, client,
 						src == client ? cmsg : msg);
