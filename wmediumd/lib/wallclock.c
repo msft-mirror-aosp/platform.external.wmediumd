@@ -63,7 +63,7 @@ void usfstl_sched_wallclock_wait(struct usfstl_scheduler *sched)
 }
 
 void usfstl_sched_wallclock_init(struct usfstl_scheduler *sched,
-			       unsigned int ns_per_tick)
+				 unsigned int ns_per_tick)
 {
 	USFSTL_ASSERT(!sched->external_request && !sched->external_wait);
 

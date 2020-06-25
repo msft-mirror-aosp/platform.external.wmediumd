@@ -69,8 +69,8 @@ CONV(64)
 
 static struct usfstl_vhost_user_buf *
 usfstl_vhost_user_get_virtq_buf(struct usfstl_vhost_user_dev_int *dev,
-			      unsigned int virtq_idx,
-			      struct usfstl_vhost_user_buf *fixed)
+				unsigned int virtq_idx,
+				struct usfstl_vhost_user_buf *fixed)
 {
 	struct usfstl_vhost_user_buf *buf = fixed;
 	struct vring *virtq = &dev->virtqs[virtq_idx].virtq;
@@ -103,8 +103,8 @@ usfstl_vhost_user_get_virtq_buf(struct usfstl_vhost_user_dev_int *dev,
 	} while (more);
 
 	if (n_in > fixed->n_in_sg || n_out > fixed->n_out_sg) {
-	    	size_t sz = sizeof(*buf);
-	    	struct iovec *vec;
+		size_t sz = sizeof(*buf);
+		struct iovec *vec;
 
 		sz += (n_in + n_out) * sizeof(*vec);
 
@@ -242,7 +242,7 @@ static void usfstl_vhost_user_send_virtq_buf(struct usfstl_vhost_user_dev_int *d
 	__sync_synchronize();
 
 	virtq->used->idx = cpu_to_virtio16(dev, widx);
-	
+
 	if (call_fd < 0 &&
 	    dev->ext.protocol_features &
 			(1ULL << VHOST_USER_PROTOCOL_F_INBAND_NOTIFICATIONS) &&
@@ -302,7 +302,7 @@ static void usfstl_vhost_user_send_virtq_buf(struct usfstl_vhost_user_dev_int *d
 }
 
 static void usfstl_vhost_user_handle_queue(struct usfstl_vhost_user_dev_int *dev,
-					 unsigned int virtq_idx)
+					   unsigned int virtq_idx)
 {
 	/* preallocate on the stack for most cases */
 	struct iovec in_sg[SG_STACK_PREALLOC] = { };
@@ -338,7 +338,7 @@ static void usfstl_vhost_user_job_callback(struct usfstl_job *job)
 }
 
 static void usfstl_vhost_user_virtq_kick(struct usfstl_vhost_user_dev_int *dev,
-				       unsigned int virtq)
+					 unsigned int virtq)
 {
 	if (!(dev->ext.server->input_queues & (1ULL << virtq)))
 		return;
@@ -439,7 +439,7 @@ static void usfstl_vhost_user_dev_free(struct usfstl_vhost_user_dev_int *dev)
 }
 
 static void usfstl_vhost_user_get_msg_fds(struct msghdr *msghdr,
-					int *outfds, int max_fds)
+					  int *outfds, int max_fds)
 {
 	struct cmsghdr *msg;
 	int fds;
@@ -774,8 +774,8 @@ void *usfstl_vhost_user_to_va(struct usfstl_vhost_user_dev *extdev, uint64_t add
 			   dev->regions[region].size)
 			return (uint8_t *)dev->region_vaddr[region] +
 			       (addr -
-			        dev->regions[region].user_addr +
-			        dev->regions[region].mmap_offset);
+				dev->regions[region].user_addr +
+				dev->regions[region].mmap_offset);
 	}
 
 	USFSTL_ASSERT(0, "cannot translate address %"PRIx64"\n", addr);

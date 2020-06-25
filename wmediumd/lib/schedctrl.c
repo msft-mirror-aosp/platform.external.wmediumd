@@ -122,9 +122,6 @@ static void usfstl_sched_ctrl_wait(struct usfstl_scheduler *sched)
 
 #define JOB_ASSERT_VAL(j) (j) ? (j)->name : "<NULL>"
 
-extern struct usfstl_sched_ctrl g_schedCtrl;
-extern struct usfstl_scheduler g_usfstl_task_scheduler;
-
 void usfstl_sched_ctrl_start(struct usfstl_sched_ctrl *ctrl,
 			     const char *socket,
 			     uint32_t nsec_per_tick,

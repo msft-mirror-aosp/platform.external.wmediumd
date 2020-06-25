@@ -262,7 +262,7 @@ static void usfstl_sched_restore_blocked_jobs(struct usfstl_scheduler *sched)
 					      entry) {
 		if (job == sched->allowed_job ||
 		    !((1 << job->group) & sched->blocked_groups))
-		usfstl_sched_restore_job(sched, job);
+			usfstl_sched_restore_job(sched, job);
 	}
 }
 

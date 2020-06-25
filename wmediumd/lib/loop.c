@@ -50,6 +50,7 @@ void usfstl_loop_wait_and_handle(void)
 		struct usfstl_loop_entry *tmp;
 		fd_set rd_set, exc_set;
 		unsigned int max = 0, num;
+
 		FD_ZERO(&rd_set);
 		FD_ZERO(&exc_set);
 
