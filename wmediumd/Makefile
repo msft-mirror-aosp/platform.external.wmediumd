@@ -56,7 +56,7 @@ OBJECTS += lib/uds.o lib/vhost.o lib/wallclock.o
 ifeq ($(SANITIZE),1)
 CFLAGS += -fsanitize=undefined,address
 # apparently these have to come first for some reason
-override LDFLAGS := -lasan -lubsan $(LDFLAGS)
+override LDFLAGS := -lasan -lubsan -lstdc++ $(LDFLAGS)
 endif
 
 all: wmediumd 
