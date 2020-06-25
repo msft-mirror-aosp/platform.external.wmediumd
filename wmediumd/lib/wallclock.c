@@ -56,8 +56,12 @@ void usfstl_sched_wallclock_wait(struct usfstl_scheduler *sched)
 {
 	sched->wallclock.timer_triggered = 0;
 
+	usfstl_loop_register(&sched->wallclock.entry);
+
 	while (!sched->wallclock.timer_triggered)
 		usfstl_loop_wait_and_handle();
+
+	usfstl_loop_unregister(&sched->wallclock.entry);
 
 	usfstl_sched_set_time(sched, sched->prev_external_sync);
 }
@@ -76,8 +80,6 @@ void usfstl_sched_wallclock_init(struct usfstl_scheduler *sched,
 	sched->wallclock.entry.handler = usfstl_sched_wallclock_handle_fd;
 
 	sched->wallclock.nsec_per_tick = ns_per_tick;
-
-	usfstl_loop_register(&sched->wallclock.entry);
 }
 
 void usfstl_sched_wallclock_exit(struct usfstl_scheduler *sched)
@@ -87,8 +89,6 @@ void usfstl_sched_wallclock_exit(struct usfstl_scheduler *sched)
 
 	sched->external_request = NULL;
 	sched->external_wait = NULL;
-
-	usfstl_loop_unregister(&sched->wallclock.entry);
 	close(sched->wallclock.entry.fd);
 }
 
