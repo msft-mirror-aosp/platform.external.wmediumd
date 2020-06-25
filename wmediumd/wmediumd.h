@@ -192,6 +192,8 @@ struct wmediumd {
 	struct nl_sock *sock;
 	struct usfstl_loop_entry nl_loop;
 
+	struct usfstl_sched_ctrl *ctrl;
+
 	struct list_head clients;
 	struct client nl_client;
 

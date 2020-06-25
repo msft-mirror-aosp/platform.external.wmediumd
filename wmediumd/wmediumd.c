@@ -508,6 +508,8 @@ static void send_tx_info_frame_nl(struct wmediumd *ctx, struct frame *frame)
 		goto out;
 	}
 
+	if (ctx->ctrl)
+		usfstl_sched_ctrl_sync_to(ctx->ctrl);
 	wmediumd_send_to_client(ctx, frame->src, msg);
 
 out:
@@ -548,6 +550,9 @@ static void send_cloned_frame_msg(struct wmediumd *ctx, struct station *dst,
 
 	w_logf(ctx, LOG_DEBUG, "cloned msg dest " MAC_FMT " (radio: " MAC_FMT ") len %d\n",
 		   MAC_ARGS(dst->addr), MAC_ARGS(dst->hwaddr), data_len);
+
+	if (ctx->ctrl)
+		usfstl_sched_ctrl_sync_to(ctx->ctrl);
 
 	if (dst->client) {
 		wmediumd_send_to_client(ctx, dst->client, msg);
@@ -904,6 +909,9 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 		list_del_init(&client->list);
 		break;
 	case WMEDIUMD_MSG_NETLINK:
+		if (ctx->ctrl)
+			usfstl_sched_ctrl_sync_from(ctx->ctrl);
+
 		if (!nlmsg_ok((const struct nlmsghdr *)data, len)) {
 			response = WMEDIUMD_MSG_INVALID;
 			break;
@@ -1180,6 +1188,7 @@ int main(int argc, char *argv[])
 				      &scheduler);
 		vusrv.scheduler = &scheduler;
 		vusrv.ctrl = &ctrl;
+		ctx.ctrl = &ctrl;
 	} else {
 		usfstl_sched_wallclock_init(&scheduler, 1000);
 	}
