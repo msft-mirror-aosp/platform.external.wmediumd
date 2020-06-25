@@ -274,6 +274,41 @@ static void wmediumd_wait_for_client_ack(struct wmediumd *ctx,
 		usfstl_loop_wait_and_handle();
 }
 
+static void wmediumd_notify_frame_start(struct usfstl_job *job)
+{
+	struct frame *frame = container_of(job, struct frame, start_job);
+	struct wmediumd *ctx = job->data;
+	struct client *client;
+	struct {
+		struct wmediumd_message_header hdr;
+		struct wmediumd_tx_start start;
+	} __attribute__((packed)) msg = {
+		.hdr.type = WMEDIUMD_MSG_TX_START,
+		.hdr.data_len = sizeof(msg.start),
+		.start.freq = frame->freq,
+	};
+
+	if (ctx->ctrl)
+		usfstl_sched_ctrl_sync_to(ctx->ctrl);
+
+	list_for_each_entry(client, &ctx->clients, list) {
+		if (!(client->flags & WMEDIUMD_CTL_NOTIFY_TX_START))
+			continue;
+
+		if (client == frame->src)
+			msg.start.cookie = frame->cookie;
+		else
+			msg.start.cookie = 0;
+
+		/* must be API socket since flags cannot otherwise be set */
+		assert(client->type == CLIENT_API_SOCK);
+
+		write(client->loop.fd, &msg, sizeof(msg));
+
+		wmediumd_wait_for_client_ack(ctx, client);
+	}
+}
+
 static void queue_frame(struct wmediumd *ctx, struct station *station,
 			struct frame *frame)
 {
@@ -407,6 +442,15 @@ static void queue_frame(struct wmediumd *ctx, struct station *station,
 
 	frame->duration = send_time;
 	frame->src = station->client;
+
+	if (ctx->need_start_notify) {
+		frame->start_job.start = target - send_time;
+		frame->start_job.callback = wmediumd_notify_frame_start;
+		frame->start_job.data = ctx;
+		frame->start_job.name = "frame-start";
+		usfstl_sched_add_job(&scheduler, &frame->start_job);
+	}
+
 	frame->job.start = target;
 	frame->job.callback = wmediumd_deliver_frame;
 	frame->job.data = ctx;
@@ -473,6 +517,10 @@ static void wmediumd_remove_client(struct wmediumd *ctx, struct client *client)
 
 	if (!list_empty(&client->list))
 		list_del(&client->list);
+
+	if (client->flags & WMEDIUMD_CTL_NOTIFY_TX_START)
+		ctx->need_start_notify--;
+
 	free(client);
 }
 
@@ -519,11 +567,13 @@ out:
 /*
  * Send a data frame to the kernel for reception at a specific radio.
  */
-static void send_cloned_frame_msg(struct wmediumd *ctx, struct station *dst,
-				  u8 *data, int data_len, int rate_idx,
-				  int signal, int freq)
+static void send_cloned_frame_msg(struct wmediumd *ctx, struct client *src,
+				  struct station *dst, u8 *data, int data_len,
+				  int rate_idx, int signal, int freq,
+				  uint64_t cookie)
 {
-	struct nl_msg *msg;
+	struct client *client;
+	struct nl_msg *msg, *cmsg = NULL;
 
 	msg = nlmsg_alloc();
 	if (!msg) {
@@ -554,17 +604,25 @@ static void send_cloned_frame_msg(struct wmediumd *ctx, struct station *dst,
 	if (ctx->ctrl)
 		usfstl_sched_ctrl_sync_to(ctx->ctrl);
 
-	if (dst->client) {
-		wmediumd_send_to_client(ctx, dst->client, msg);
-	} else {
-		struct client *client;
-
-		list_for_each_entry(client, &ctx->clients, list)
+	list_for_each_entry(client, &ctx->clients, list) {
+		if (client->flags & WMEDIUMD_CTL_RX_ALL_FRAMES) {
+			if (!cmsg) {
+				cmsg = nlmsg_convert(nlmsg_hdr(msg));
+				if (!cmsg)
+					continue;
+				nla_put_u64(msg, HWSIM_ATTR_COOKIE, cookie);
+			}
+			wmediumd_send_to_client(ctx, client,
+						src == client ? cmsg : msg);
+		} else if (!dst->client || dst->client == client) {
 			wmediumd_send_to_client(ctx, client, msg);
+		}
 	}
 
 out:
 	nlmsg_free(msg);
+	if (cmsg)
+		nlmsg_free(cmsg);
 }
 
 static void wmediumd_deliver_frame(struct usfstl_job *job)
@@ -620,11 +678,13 @@ static void wmediumd_deliver_frame(struct usfstl_job *job)
 					continue;
 				}
 
-				send_cloned_frame_msg(ctx, station,
+				send_cloned_frame_msg(ctx, frame->sender->client,
+						      station,
 						      frame->data,
 						      frame->data_len,
 						      1, signal,
-						      frame->freq);
+						      frame->freq,
+						      frame->cookie);
 
 			} else if (station_has_addr(station, dest)) {
 				if (set_interference_duration(ctx,
@@ -632,11 +692,13 @@ static void wmediumd_deliver_frame(struct usfstl_job *job)
 					frame->signal))
 					continue;
 
-				send_cloned_frame_msg(ctx, station,
+				send_cloned_frame_msg(ctx, frame->sender->client,
+						      station,
 						      frame->data,
 						      frame->data_len,
 						      1, frame->signal,
-						      frame->freq);
+						      frame->freq,
+						      frame->cookie);
 			}
 		}
 	} else
@@ -865,6 +927,7 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 	struct wmediumd *ctx = entry->data;
 	struct wmediumd_message_header hdr;
 	enum wmediumd_message response = WMEDIUMD_MSG_ACK;
+	struct wmediumd_message_control control = {};
 	struct nl_msg *nlmsg;
 	unsigned char *data;
 	ssize_t len;
@@ -924,6 +987,18 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 		_process_messages(nlmsg, ctx, client);
 
 		nlmsg_free(nlmsg);
+		break;
+	case WMEDIUMD_MSG_SET_CONTROL:
+		/* copy what we get and understand, leave the rest zeroed */
+		memcpy(&control, data,
+		       min(sizeof(control), hdr.data_len));
+
+		if (client->flags & WMEDIUMD_CTL_NOTIFY_TX_START)
+			ctx->need_start_notify--;
+		if (control.flags & WMEDIUMD_CTL_NOTIFY_TX_START)
+			ctx->need_start_notify++;
+
+		client->flags = control.flags;
 		break;
 	case WMEDIUMD_MSG_ACK:
 		abort();
