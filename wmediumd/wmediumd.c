@@ -26,6 +26,7 @@
 #include <netlink/genl/genl.h>
 #include <netlink/genl/ctrl.h>
 #include <netlink/genl/family.h>
+#include <assert.h>
 #include <stdint.h>
 #include <getopt.h>
 #include <signal.h>
@@ -264,6 +265,15 @@ static struct station *get_station_by_used_addr(struct wmediumd *ctx, u8 *addr)
 	return NULL;
 }
 
+static void wmediumd_wait_for_client_ack(struct wmediumd *ctx,
+					 struct client *client)
+{
+	client->wait_for_ack = true;
+
+	while (client->wait_for_ack)
+		usfstl_loop_wait_and_handle();
+}
+
 static void queue_frame(struct wmediumd *ctx, struct station *station,
 			struct frame *frame)
 {
@@ -430,8 +440,7 @@ static void wmediumd_send_to_client(struct wmediumd *ctx,
 		hdr.data_len = len;
 		write(client->loop.fd, &hdr, sizeof(hdr));
 		write(client->loop.fd, (void *)nlmsg_hdr(msg), len);
-		/* read the ACK back */
-		read(client->loop.fd, &hdr, sizeof(hdr));
+		wmediumd_wait_for_client_ack(ctx, client);
 		break;
 	}
 }
@@ -871,6 +880,14 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 	if (len != hdr.data_len)
 		goto disconnect;
 
+	if (client->wait_for_ack) {
+		assert(hdr.type == WMEDIUMD_MSG_ACK);
+		assert(hdr.data_len == 0);
+		client->wait_for_ack = false;
+		/* don't send a response to a response, of course */
+		return;
+	}
+
 	switch (hdr.type) {
 	case WMEDIUMD_MSG_REGISTER:
 		if (!list_empty(&client->list)) {
@@ -900,6 +917,8 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 
 		nlmsg_free(nlmsg);
 		break;
+	case WMEDIUMD_MSG_ACK:
+		abort();
 	default:
 		response = WMEDIUMD_MSG_INVALID;
 		break;

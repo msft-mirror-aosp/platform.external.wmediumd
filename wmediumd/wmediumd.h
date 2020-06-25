@@ -183,6 +183,7 @@ struct client {
 
 	/* for API socket */
 	struct usfstl_loop_entry loop;
+	bool wait_for_ack;
 };
 
 struct wmediumd {
