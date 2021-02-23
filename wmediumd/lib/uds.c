@@ -76,7 +76,7 @@ void usfstl_uds_remove(const char *path)
 	struct usfstl_loop_entry *tmp;
 	struct usfstl_uds_server *uds, *found = NULL;
 
-	usfstl_for_each_list_item(tmp, &g_usfstl_loop_entries, list) {
+	usfstl_loop_for_each_entry(tmp) {
 		if (tmp->handler != usfstl_uds_accept_handler)
 			continue;
 
@@ -89,6 +89,7 @@ void usfstl_uds_remove(const char *path)
 
 	USFSTL_ASSERT(found);
 
+	close(found->entry.fd);
 	usfstl_loop_unregister(&found->entry);
 	unlink(path);
 	free(found);
@@ -142,7 +143,7 @@ void usfstl_uds_disconnect(int fd)
 	struct usfstl_loop_entry *tmp;
 	struct usfstl_uds_client *uds, *found = NULL;
 
-	usfstl_for_each_list_item(tmp, &g_usfstl_loop_entries, list) {
+	usfstl_loop_for_each_entry(tmp) {
 		if (tmp->handler != usfstl_uds_readable_handler)
 			continue;
 
@@ -155,6 +156,7 @@ void usfstl_uds_disconnect(int fd)
 
 	USFSTL_ASSERT(found);
 
+	close(fd);
 	usfstl_loop_unregister(&found->entry);
 	free(found);
 }

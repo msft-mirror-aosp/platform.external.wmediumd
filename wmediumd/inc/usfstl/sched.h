@@ -6,7 +6,6 @@
 #ifndef _USFSTL_SCHED_H_
 #define _USFSTL_SCHED_H_
 #include <stdint.h>
-#include <stdlib.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include "assert.h"
@@ -42,60 +41,6 @@
  */
 
 /**
- * struct usfstl_scheduler - usfstl scheduler structure
- * @external_request: If external scheduler integration is required,
- *	set this function pointer appropriately to request the next
- *	run time from the external scheduler.
- * @external_wait: For external scheduler integration, this must wait
- *	for the previously requested runtime being granted, and you
- *	must call usfstl_sched_set_time() before returning from this
- *	function.
- * @time_advanced: Set this to have logging (or similar) when time
- *	advances. Note that the argument is relative to the previous
- *	time, if you need the current absolute time use
- *	usfstl_sched_current_time(), subtract @delta from that to
- *	obtain the time prior to the current advance.
- *
- * Use USFSTL_SCHEDULER() to declare (and initialize) a scheduler.
- */
-struct usfstl_scheduler {
-	void (*external_request)(struct usfstl_scheduler *, uint64_t);
-	void (*external_wait)(struct usfstl_scheduler *);
-	void (*time_advanced)(struct usfstl_scheduler *, uint64_t delta);
-
-/* private: */
-	uint64_t current_time;
-	uint64_t prev_external_sync, next_external_sync;
-
-	struct usfstl_list joblist;
-	struct usfstl_list pending_jobs;
-	struct usfstl_job *allowed_job;
-
-	uint32_t blocked_groups;
-	uint8_t next_external_sync_set:1,
-		prev_external_sync_set:1,
-		waiting:1;
-
-	struct {
-		struct usfstl_loop_entry entry;
-		uint64_t start;
-		uint32_t nsec_per_tick;
-		uint8_t timer_triggered:1,
-		        initialized:1;
-	} wallclock;
-
-	struct {
-		void *ctrl;
-	} ext;
-};
-
-#define USFSTL_SCHEDULER(name)						\
-	struct usfstl_scheduler name = {				\
-		.joblist = USFSTL_LIST_INIT(name.joblist),		\
-		.pending_jobs = USFSTL_LIST_INIT(name.pending_jobs),	\
-	}
-
-/**
  * struct usfstl_job - usfstl scheduler job
  * @time: time this job fires
  * @priority: priority of the job, in case of multiple happening
@@ -118,6 +63,71 @@ struct usfstl_job {
 	struct usfstl_list_entry entry;
 };
 
+/**
+ * struct usfstl_scheduler - usfstl scheduler structure
+ * @external_request: If external scheduler integration is required,
+ *	set this function pointer appropriately to request the next
+ *	run time from the external scheduler.
+ * @external_wait: For external scheduler integration, this must wait
+ *	for the previously requested runtime being granted, and you
+ *	must call usfstl_sched_set_time() before returning from this
+ *	function.
+ * @external_sync_from: For external scheduler integration, return current
+ *	time based on external time info.
+ * @time_advanced: Set this to have logging (or similar) when time
+ *	advances. Note that the argument is relative to the previous
+ *	time, if you need the current absolute time use
+ *	usfstl_sched_current_time(), subtract @delta from that to
+ *	obtain the time prior to the current advance.
+ *
+ * Use USFSTL_SCHEDULER() to declare (and initialize) a scheduler.
+ */
+struct usfstl_scheduler {
+	void (*external_request)(struct usfstl_scheduler *, uint64_t);
+	void (*external_wait)(struct usfstl_scheduler *);
+	uint64_t (*external_sync_from)(struct usfstl_scheduler *sched);
+	void (*time_advanced)(struct usfstl_scheduler *, uint64_t delta);
+
+/* private: */
+	void (*next_time_changed)(struct usfstl_scheduler *);
+	uint64_t current_time;
+	uint64_t prev_external_sync, next_external_sync;
+
+	struct usfstl_list joblist;
+	struct usfstl_list pending_jobs;
+	struct usfstl_job *allowed_job;
+
+	uint32_t blocked_groups;
+	uint8_t next_external_sync_set:1,
+		prev_external_sync_set:1,
+		waiting:1;
+
+	struct {
+		struct usfstl_loop_entry entry;
+		uint64_t start;
+		uint32_t nsec_per_tick;
+		uint8_t timer_triggered:1,
+			initialized:1;
+	} wallclock;
+
+	struct {
+		struct usfstl_scheduler *parent;
+		int64_t offset;
+		uint32_t tick_ratio;
+		struct usfstl_job job;
+		bool waiting;
+	} link;
+
+	struct {
+		void *ctrl;
+	} ext;
+};
+
+#define USFSTL_SCHEDULER(name)						\
+	struct usfstl_scheduler name = {				\
+		.joblist = USFSTL_LIST_INIT(name.joblist),		\
+		.pending_jobs = USFSTL_LIST_INIT(name.pending_jobs),	\
+	}
 
 #define usfstl_time_check(x) \
 	({ uint64_t __t; typeof(x) __x; (void)(&__t == &__x); 1; })
@@ -145,17 +155,18 @@ struct usfstl_job {
 	uint64_t _a = a;						\
 	uint64_t _b = b;						\
 	if (!usfstl_time_cmp(_a, op, _b))				\
-		abort();						\
+		usfstl_abort(__FILE__, __LINE__,			\
+			     "usfstl_time_cmp(" #a ", " #op ", " #b ")",\
+			     "  " #a " = %" PRIu64 "\n"			\
+			     "  " #b " = %" PRIu64 "\n",		\
+			     _a, _b);					\
 } while (0)
 
 /**
  * usfstl_sched_current_time - return current time
  * @sched: the scheduler to operate with
  */
-static inline uint64_t usfstl_sched_current_time(struct usfstl_scheduler *sched)
-{
-	return sched->current_time;
-}
+uint64_t usfstl_sched_current_time(struct usfstl_scheduler *sched);
 
 /**
  * usfstl_sched_add_job - add job execution
@@ -363,5 +374,35 @@ void usfstl_sched_wallclock_exit(struct usfstl_scheduler *sched);
  * took for such an event to arrive into the given scheduler.
  */
 void usfstl_sched_wallclock_wait_and_handle(struct usfstl_scheduler *sched);
+
+/**
+ * usfstl_sched_link - link a scheduler to another one
+ * @sched: the scheduler to link, must not already use the external
+ *	request methods, of course. Should also not be running.
+ * @parent: the parent scheduler to link to
+ * @tick_ratio: "tick_ratio" parent ticks == 1 of our ticks;
+ *	e.g. 1000 for if @sched should have microseconds, while @parent
+ *	uses nanoseconds.
+ *
+ * This links two schedulers together, and requesting any runtime in the
+ * inner scheduler (@sched) depends on the parent scheduler (@parent)
+ * granting it.
+ *
+ * Time in the inner scheduler is adjusted in two ways:
+ * 1) there's a "tick_ratio" as described above
+ * 2) at the time of linking, neither scheduler changes its current
+ *    time, instead an offset between the two is maintained, so the
+ *    inner scheduler can be at e.g. zero and be linked to a parent
+ *    that has already been running for a while.
+ */
+void usfstl_sched_link(struct usfstl_scheduler *sched,
+		       struct usfstl_scheduler *parent,
+		       uint32_t tick_ratio);
+
+/**
+ * usfstl_sched_unlink - unlink a scheduler again
+ * @sched: the scheduler to unlink, must be linked
+ */
+void usfstl_sched_unlink(struct usfstl_scheduler *sched);
 
 #endif // _USFSTL_SCHED_H_

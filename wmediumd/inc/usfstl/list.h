@@ -13,7 +13,7 @@
 #endif
 
 #ifndef container_of
-#define container_of(ptr, type, member) ((type *)(void*)( (char*)ptr - offsetof(type, member)))
+#define container_of(ptr, type, member) ((type *)(void *)((char *)ptr - offsetof(type, member)))
 #endif
 
 struct usfstl_list_entry {
@@ -24,7 +24,7 @@ struct usfstl_list {
 	struct usfstl_list_entry list;
 };
 
-#define USFSTL_LIST_INIT(name) { 	\
+#define USFSTL_LIST_INIT(name) {	\
 	.list.next = &(name).list,	\
 	.list.prev = &(name).list,	\
 }
@@ -64,6 +64,13 @@ static inline void usfstl_list_append(struct usfstl_list *list,
 	     item; \
 	     item = usfstl_next_item(_list, item, typeof(*item), member))
 
+#define usfstl_for_each_list_item_safe(item, next, _list, member) \
+	for (item = usfstl_list_first_item(_list, typeof(*item), member), \
+	     next = item ? usfstl_next_item(_list, item, typeof(*next), member) : NULL; \
+	     item; \
+	     item = next, \
+	     next = item ? usfstl_next_item(_list, next, typeof(*next), member) : NULL)
+
 #define usfstl_for_each_list_item_continue_safe(item, next, _list, member) \
 	for (item = item ? usfstl_next_item(_list, item, typeof(*item), member) : \
 			   usfstl_list_first_item(_list, typeof(*item), member), \
@@ -71,7 +78,7 @@ static inline void usfstl_list_append(struct usfstl_list *list,
 	     item; \
 	     item = next, next = item ? usfstl_next_item(_list, next, typeof(*item), member) : NULL)
 
-static inline bool usfstl_list_empty(struct usfstl_list *list)
+static inline bool usfstl_list_empty(const struct usfstl_list *list)
 {
 	return list->list.next == &list->list;
 }

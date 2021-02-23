@@ -38,6 +38,8 @@ struct usfstl_loop_entry {
 	void *data;
 };
 
+extern struct usfstl_list g_usfstl_loop_entries;
+
 /**
  * g_usfstl_loop_pre_handler_fn - pre-handler function
  *
@@ -67,5 +69,19 @@ void usfstl_loop_unregister(struct usfstl_loop_entry *entry);
  * Wait for, and handle, a single event, then return.
  */
 void usfstl_loop_wait_and_handle(void);
+
+/**
+ * usfstl_loop_for_each_entry - iterate main loop entries
+ */
+#define usfstl_loop_for_each_entry(entry) \
+	usfstl_for_each_list_item(entry, &g_usfstl_loop_entries, list)
+
+/**
+ * usfstl_loop_for_each_entry_safe - iterate main loop entries safely
+ *
+ * Where "safely" means safe to concurrent modification.
+ */
+#define usfstl_loop_for_each_entry_safe(entry, tmp) \
+	usfstl_for_each_list_item_safe(entry, tmp, &g_usfstl_loop_entries, list)
 
 #endif // _USFSTL_LOOP_H_

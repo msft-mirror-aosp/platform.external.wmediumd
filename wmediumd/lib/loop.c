@@ -29,7 +29,7 @@ void usfstl_loop_register(struct usfstl_loop_entry *entry)
 {
 	struct usfstl_loop_entry *tmp;
 
-	usfstl_for_each_list_item(tmp, &g_usfstl_loop_entries, list) {
+	usfstl_loop_for_each_entry(tmp) {
 		if (entry->priority >= tmp->priority) {
 			usfstl_list_insert_before(&tmp->list, &entry->list);
 			return;
@@ -54,7 +54,7 @@ void usfstl_loop_wait_and_handle(void)
 		FD_ZERO(&rd_set);
 		FD_ZERO(&exc_set);
 
-		usfstl_for_each_list_item(tmp, &g_usfstl_loop_entries, list) {
+		usfstl_loop_for_each_entry(tmp) {
 			FD_SET(tmp->fd, &rd_set);
 			FD_SET(tmp->fd, &exc_set);
 			if ((unsigned int)tmp->fd > max)
@@ -64,7 +64,7 @@ void usfstl_loop_wait_and_handle(void)
 		num = select(max + 1, &rd_set, NULL, &exc_set, NULL);
 		assert(num > 0);
 
-		usfstl_for_each_list_item(tmp, &g_usfstl_loop_entries, list) {
+		usfstl_loop_for_each_entry(tmp) {
 			void *data = g_usfstl_loop_pre_handler_fn_data;
 
 			if (!FD_ISSET(tmp->fd, &rd_set) &&

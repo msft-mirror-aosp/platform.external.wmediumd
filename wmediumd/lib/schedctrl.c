@@ -24,43 +24,6 @@ static void _usfstl_sched_ctrl_send_msg(struct usfstl_sched_ctrl *ctrl,
 			 (int)sizeof(msg), "%d");
 }
 
-static void usfstl_sched_ctrl_send_msg(struct usfstl_sched_ctrl *ctrl,
-				       enum um_timetravel_ops op,
-				       uint64_t time)
-{
-	static uint32_t seq, old_expected;
-
-	do {
-		seq++;
-	} while (seq == 0);
-
-	_usfstl_sched_ctrl_send_msg(ctrl, op, time, seq);
-	old_expected = ctrl->expected_ack_seq;
-	ctrl->expected_ack_seq = seq;
-
-	USFSTL_ASSERT_EQ((int)ctrl->acked, 0, "%d");
-
-	while (!ctrl->acked)
-		usfstl_loop_wait_and_handle();
-	ctrl->acked = 0;
-	ctrl->expected_ack_seq = old_expected;
-
-	if (op == UM_TIMETRAVEL_GET) {
-		if (ctrl->frozen) {
-			uint64_t local;
-
-			local = ctrl->sched->current_time * ctrl->nsec_per_tick;
-			ctrl->offset = ctrl->ack_time - local;
-		} else {
-			uint64_t time;
-
-			time = DIV_ROUND_UP(ctrl->ack_time - ctrl->offset,
-					    ctrl->nsec_per_tick);
-			usfstl_sched_set_time(ctrl->sched, time);
-		}
-	}
-}
-
 static void usfstl_sched_ctrl_sock_read(int fd, void *data)
 {
 	struct usfstl_sched_ctrl *ctrl = data;
@@ -101,9 +64,71 @@ static void usfstl_sched_ctrl_sock_read(int fd, void *data)
 	_usfstl_sched_ctrl_send_msg(ctrl, UM_TIMETRAVEL_ACK, 0, msg.seq);
 }
 
+static void usfstl_sched_ctrl_send_msg(struct usfstl_sched_ctrl *ctrl,
+				       enum um_timetravel_ops op,
+				       uint64_t time)
+{
+	static uint32_t seq, old_expected;
+
+	do {
+		seq++;
+	} while (seq == 0);
+
+	_usfstl_sched_ctrl_send_msg(ctrl, op, time, seq);
+	old_expected = ctrl->expected_ack_seq;
+	ctrl->expected_ack_seq = seq;
+
+	USFSTL_ASSERT_EQ((int)ctrl->acked, 0, "%d");
+
+	/*
+	 * Race alert!
+	 *
+	 * UM_TIMETRAVEL_WAIT basically passes the run "token" to the
+	 * controller, which passes it to another participant of the
+	 * simulation. This other participant might immediately send
+	 * us another message on a different channel, e.g. if this
+	 * code is used in a vhost-user device.
+	 *
+	 * If here we were to use use usfstl_loop_wait_and_handle(),
+	 * we could actually get and process the vhost-user message
+	 * before the ACK for the WAIT message here, depending on the
+	 * (host) kernel's message ordering and select() handling etc.
+	 *
+	 * To avoid this, directly read the ACK message for the WAIT,
+	 * without handling any other sockets (first).
+	 */
+	if (op == UM_TIMETRAVEL_WAIT) {
+		usfstl_sched_ctrl_sock_read(ctrl->fd, ctrl);
+		USFSTL_ASSERT(ctrl->acked);
+	}
+
+	while (!ctrl->acked)
+		usfstl_loop_wait_and_handle();
+	ctrl->acked = 0;
+	ctrl->expected_ack_seq = old_expected;
+
+	if (op == UM_TIMETRAVEL_GET) {
+		if (ctrl->frozen) {
+			uint64_t local;
+
+			local = ctrl->sched->current_time * ctrl->nsec_per_tick;
+			ctrl->offset = ctrl->ack_time - local;
+		} else {
+			uint64_t time;
+
+			time = DIV_ROUND_UP(ctrl->ack_time - ctrl->offset,
+					    ctrl->nsec_per_tick);
+			usfstl_sched_set_time(ctrl->sched, time);
+		}
+	}
+}
+
 static void usfstl_sched_ctrl_request(struct usfstl_scheduler *sched, uint64_t time)
 {
 	struct usfstl_sched_ctrl *ctrl = sched->ext.ctrl;
+
+	if (!ctrl->started)
+		return;
 
 	usfstl_sched_ctrl_send_msg(ctrl, UM_TIMETRAVEL_REQUEST,
 				   time * ctrl->nsec_per_tick + ctrl->offset);
@@ -133,6 +158,8 @@ void usfstl_sched_ctrl_start(struct usfstl_sched_ctrl *ctrl,
 	USFSTL_ASSERT_EQ(ctrl->sched, NULL, "%p");
 	USFSTL_ASSERT_EQ(sched->ext.ctrl, NULL, "%p");
 
+	memset(ctrl, 0, sizeof(*ctrl));
+
 	/*
 	 * The remote side assumes we start at 0, so if we don't have 0 right
 	 * now keep the difference in our own offset (in nsec).
@@ -156,6 +183,7 @@ void usfstl_sched_ctrl_start(struct usfstl_sched_ctrl *ctrl,
 
 	/* tell the other side we're starting  */
 	usfstl_sched_ctrl_send_msg(ctrl, UM_TIMETRAVEL_START, client_id);
+	ctrl->started = 1;
 
 	/* if we have a job already, request it */
 	job = usfstl_sched_next_pending(sched, NULL);
@@ -174,6 +202,8 @@ void usfstl_sched_ctrl_sync_to(struct usfstl_sched_ctrl *ctrl)
 {
 	uint64_t time;
 
+	USFSTL_ASSERT(ctrl->started, "cannot sync to scheduler until started");
+
 	time = usfstl_sched_current_time(ctrl->sched) * ctrl->nsec_per_tick;
 	time += ctrl->offset;
 
@@ -182,6 +212,8 @@ void usfstl_sched_ctrl_sync_to(struct usfstl_sched_ctrl *ctrl)
 
 void usfstl_sched_ctrl_sync_from(struct usfstl_sched_ctrl *ctrl)
 {
+	if (!ctrl->started)
+		return;
 	usfstl_sched_ctrl_send_msg(ctrl, UM_TIMETRAVEL_GET, -1);
 }
 

@@ -16,7 +16,7 @@ struct usfstl_sched_ctrl {
 	int64_t offset;
 	uint32_t nsec_per_tick;
 	int fd;
-	unsigned int waiting:1, acked:1, frozen:1;
+	unsigned int waiting:1, acked:1, frozen:1, started:1;
 	uint32_t expected_ack_seq;
 };
 
