@@ -279,7 +279,7 @@ static void wmediumd_notify_frame_start(struct usfstl_job *job)
 {
 	struct frame *frame = container_of(job, struct frame, start_job);
 	struct wmediumd *ctx = job->data;
-	struct client *client;
+	struct client *client, *tmp;
 	struct {
 		struct wmediumd_message_header hdr;
 		struct wmediumd_tx_start start;
@@ -292,7 +292,7 @@ static void wmediumd_notify_frame_start(struct usfstl_job *job)
 	if (ctx->ctrl)
 		usfstl_sched_ctrl_sync_to(ctx->ctrl);
 
-	list_for_each_entry(client, &ctx->clients, list) {
+	list_for_each_entry_safe(client, tmp, &ctx->clients, list) {
 		if (!(client->flags & WMEDIUMD_CTL_NOTIFY_TX_START))
 			continue;
 
@@ -583,11 +583,12 @@ static void wmediumd_remove_client(struct wmediumd *ctx, struct client *client)
 
 	if (!list_empty(&client->list))
 		list_del(&client->list);
+	list_add(&client->list, &ctx->clients_to_free);
 
 	if (client->flags & WMEDIUMD_CTL_NOTIFY_TX_START)
 		ctx->need_start_notify--;
 
-	free(client);
+	client->wait_for_ack = false;
 }
 
 /*
@@ -638,7 +639,7 @@ static void send_cloned_frame_msg(struct wmediumd *ctx, struct client *src,
 				  int rate_idx, int signal, int freq,
 				  uint64_t cookie)
 {
-	struct client *client;
+	struct client *client, *tmp;
 	struct nl_msg *msg, *cmsg = NULL;
 
 	msg = nlmsg_alloc();
@@ -670,7 +671,7 @@ static void send_cloned_frame_msg(struct wmediumd *ctx, struct client *src,
 	if (ctx->ctrl)
 		usfstl_sched_ctrl_sync_to(ctx->ctrl);
 
-	list_for_each_entry(client, &ctx->clients, list) {
+	list_for_each_entry_safe(client, tmp, &ctx->clients, list) {
 		if (client->flags & WMEDIUMD_CTL_RX_ALL_FRAMES) {
 			if (src == client && !cmsg) {
 				struct nlmsghdr *nlh = nlmsg_hdr(msg);
@@ -1356,6 +1357,7 @@ int main(int argc, char *argv[])
 
 	INIT_LIST_HEAD(&ctx.stations);
 	INIT_LIST_HEAD(&ctx.clients);
+	INIT_LIST_HEAD(&ctx.clients_to_free);
 
 	if (load_config(&ctx, config_file, per_file))
 		return EXIT_FAILURE;
@@ -1414,6 +1416,16 @@ int main(int argc, char *argv[])
 
 			if (usfstl_sched_next_pending(&scheduler, NULL))
 				usfstl_sched_next(&scheduler);
+		}
+
+		while (!list_empty(&ctx.clients_to_free)) {
+			struct client *client;
+
+			client = list_first_entry(&ctx.clients_to_free,
+						  struct client, list);
+
+			list_del(&client->list);
+			free(client);
 		}
 	}
 

@@ -196,7 +196,7 @@ struct wmediumd {
 
 	struct usfstl_sched_ctrl *ctrl;
 
-	struct list_head clients;
+	struct list_head clients, clients_to_free;
 	struct client nl_client;
 
 	int num_stas;
