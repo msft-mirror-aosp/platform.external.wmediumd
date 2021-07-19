@@ -138,7 +138,7 @@ usfstl_vhost_user_get_virtq_buf(struct usfstl_vhost_user_dev_int *dev,
 		}
 
 		addr = virtio_to_cpu64(dev, desc->addr);
-		vec->iov_base = usfstl_vhost_user_to_va(&dev->ext, addr);
+		vec->iov_base = usfstl_vhost_phys_to_va(&dev->ext, addr);
 		vec->iov_len = virtio_to_cpu32(dev, desc->len);
 
 		desc = &virtq->desc[virtio_to_cpu16(dev, desc->next)];
@@ -836,7 +836,28 @@ void *usfstl_vhost_user_to_va(struct usfstl_vhost_user_dev *extdev, uint64_t add
 				dev->regions[region].mmap_offset);
 	}
 
-	USFSTL_ASSERT(0, "cannot translate address %"PRIx64"\n", addr);
+	USFSTL_ASSERT(0, "cannot translate user address %"PRIx64"\n", addr);
+	return NULL;
+}
+
+void *usfstl_vhost_phys_to_va(struct usfstl_vhost_user_dev *extdev, uint64_t addr)
+{
+	struct usfstl_vhost_user_dev_int *dev;
+	unsigned int region;
+
+	dev = container_of(extdev, struct usfstl_vhost_user_dev_int, ext);
+
+	for (region = 0; region < dev->n_regions; region++) {
+		if (addr >= dev->regions[region].guest_phys_addr &&
+		    addr < dev->regions[region].guest_phys_addr +
+			   dev->regions[region].size)
+			return (uint8_t *)dev->region_vaddr[region] +
+			       (addr -
+				dev->regions[region].guest_phys_addr +
+				dev->regions[region].mmap_offset);
+	}
+
+	USFSTL_ASSERT(0, "cannot translate physical address %"PRIx64"\n", addr);
 	return NULL;
 }
 
