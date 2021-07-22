@@ -175,6 +175,8 @@ static int usfstl_vhost_user_read_msg(int fd, struct msghdr *msghdr)
 	size_t i;
 	size_t maxlen = 0;
 	ssize_t len;
+	ssize_t prev_datalen;
+	size_t prev_iovlen;
 
 	USFSTL_ASSERT(msghdr->msg_iovlen >= 1);
 	USFSTL_ASSERT(msghdr->msg_iov[0].iov_len >= sizeof(*hdr));
@@ -199,17 +201,23 @@ static int usfstl_vhost_user_read_msg(int fd, struct msghdr *msghdr)
 	if (!hdr->size)
 		return 0;
 
+	prev_iovlen = msghdr->msg_iovlen;
+	msghdr->msg_iovlen = 1;
+
 	msghdr->msg_control = NULL;
 	msghdr->msg_controllen = 0;
 	msghdr->msg_iov[0].iov_base += sizeof(*hdr);
-	msghdr->msg_iov[0].iov_len -= sizeof(*hdr);
+	prev_datalen = msghdr->msg_iov[0].iov_len;
+	msghdr->msg_iov[0].iov_len = hdr->size;
 	len = recvmsg(fd, msghdr, 0);
 
 	/* restore just in case the user needs it */
 	msghdr->msg_iov[0].iov_base -= sizeof(*hdr);
-	msghdr->msg_iov[0].iov_len += sizeof(*hdr);
+	msghdr->msg_iov[0].iov_len = prev_datalen;
 	msghdr->msg_control = hdr2.msg_control;
 	msghdr->msg_controllen = hdr2.msg_controllen;
+
+	msghdr->msg_iovlen = prev_iovlen;
 
 	if (len < 0)
 		return -errno;
