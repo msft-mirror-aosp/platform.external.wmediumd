@@ -141,7 +141,7 @@ usfstl_vhost_user_get_virtq_buf(struct usfstl_vhost_user_dev_int *dev,
 		}
 
 		addr = virtio_to_cpu64(dev, desc->addr);
-		vec->iov_base = usfstl_vhost_user_to_va(&dev->ext, addr);
+		vec->iov_base = usfstl_vhost_phys_to_va(&dev->ext, addr);
 		vec->iov_len = virtio_to_cpu32(dev, desc->len);
 
 		desc = &virtq->desc[virtio_to_cpu16(dev, desc->next)];
@@ -175,6 +175,8 @@ static int usfstl_vhost_user_read_msg(int fd, struct msghdr *msghdr)
 	size_t i;
 	size_t maxlen = 0;
 	ssize_t len;
+	ssize_t prev_datalen;
+	size_t prev_iovlen;
 
 	USFSTL_ASSERT(msghdr->msg_iovlen >= 1);
 	USFSTL_ASSERT(msghdr->msg_iov[0].iov_len >= sizeof(*hdr));
@@ -199,17 +201,23 @@ static int usfstl_vhost_user_read_msg(int fd, struct msghdr *msghdr)
 	if (!hdr->size)
 		return 0;
 
+	prev_iovlen = msghdr->msg_iovlen;
+	msghdr->msg_iovlen = 1;
+
 	msghdr->msg_control = NULL;
 	msghdr->msg_controllen = 0;
 	msghdr->msg_iov[0].iov_base += sizeof(*hdr);
-	msghdr->msg_iov[0].iov_len -= sizeof(*hdr);
+	prev_datalen = msghdr->msg_iov[0].iov_len;
+	msghdr->msg_iov[0].iov_len = hdr->size;
 	len = recvmsg(fd, msghdr, 0);
 
 	/* restore just in case the user needs it */
 	msghdr->msg_iov[0].iov_base -= sizeof(*hdr);
-	msghdr->msg_iov[0].iov_len += sizeof(*hdr);
+	msghdr->msg_iov[0].iov_len = prev_datalen;
 	msghdr->msg_control = hdr2.msg_control;
 	msghdr->msg_controllen = hdr2.msg_controllen;
+
+	msghdr->msg_iovlen = prev_iovlen;
 
 	if (len < 0)
 		return -errno;
@@ -831,7 +839,28 @@ void *usfstl_vhost_user_to_va(struct usfstl_vhost_user_dev *extdev, uint64_t add
 				dev->regions[region].mmap_offset);
 	}
 
-	USFSTL_ASSERT(0, "cannot translate address %"PRIx64"\n", addr);
+	USFSTL_ASSERT(0, "cannot translate user address %"PRIx64"\n", addr);
+	return NULL;
+}
+
+void *usfstl_vhost_phys_to_va(struct usfstl_vhost_user_dev *extdev, uint64_t addr)
+{
+	struct usfstl_vhost_user_dev_int *dev;
+	unsigned int region;
+
+	dev = container_of(extdev, struct usfstl_vhost_user_dev_int, ext);
+
+	for (region = 0; region < dev->n_regions; region++) {
+		if (addr >= dev->regions[region].guest_phys_addr &&
+		    addr < dev->regions[region].guest_phys_addr +
+			   dev->regions[region].size)
+			return (uint8_t *)dev->region_vaddr[region] +
+			       (addr -
+				dev->regions[region].guest_phys_addr +
+				dev->regions[region].mmap_offset);
+	}
+
+	USFSTL_ASSERT(0, "cannot translate physical address %"PRIx64"\n", addr);
 	return NULL;
 }
 
