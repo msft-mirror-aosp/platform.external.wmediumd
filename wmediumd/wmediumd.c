@@ -1260,6 +1260,10 @@ static void init_pcapng(struct wmediumd *ctx, const char *filename)
 	fwrite(&idb, sizeof(idb), 1, ctx->pcap_file);
 }
 
+#ifndef VIRTIO_F_VERSION_1
+#define VIRTIO_F_VERSION_1 32
+#endif
+
 int main(int argc, char *argv[])
 {
 	int opt;
@@ -1272,6 +1276,7 @@ int main(int argc, char *argv[])
 		.ops = &wmediumd_vu_ops,
 		.max_queues = HWSIM_NUM_VQS,
 		.input_queues = 1 << HWSIM_VQ_TX,
+		.features = 1ULL << VIRTIO_F_VERSION_1,
 		.protocol_features =
 			1ULL << VHOST_USER_PROTOCOL_F_INBAND_NOTIFICATIONS,
 		.data = &ctx,
