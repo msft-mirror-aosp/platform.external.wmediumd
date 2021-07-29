@@ -140,6 +140,13 @@ void usfstl_vhost_user_config_changed(struct usfstl_vhost_user_dev *dev);
  */
 void *usfstl_vhost_user_to_va(struct usfstl_vhost_user_dev *dev, uint64_t addr);
 
+/**
+ * usfstl_vhost_phys_to_va - translate address
+ * @dev: device to translate address for
+ * @addr: guest-side physical addr
+ */
+void *usfstl_vhost_phys_to_va(struct usfstl_vhost_user_dev *dev, uint64_t addr);
+
 /* also some IOV helpers */
 size_t iov_len(struct iovec *sg, unsigned int nsg);
 size_t iov_fill(struct iovec *sg, unsigned int nsg,
