@@ -47,4 +47,5 @@ cc_binary_host {
     visibility: [
        "//visibility:private"
     ],
+    static_executable: true,
 }
