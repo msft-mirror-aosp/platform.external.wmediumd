@@ -16,6 +16,19 @@ license {
 wmediumd_version = "0.3.1"
 
 cc_binary_host {
+    name: "wmediumd_gen_config",
+    srcs: [
+        "util/wmediumd_gen_config.c",
+    ],
+    static_libs: [
+        "libconfig",
+    ],
+    visibility: [
+       "//visibility:private"
+    ],
+}
+
+cc_binary_host {
     name: "wmediumd",
     srcs: [
         "wmediumd/*.c",
