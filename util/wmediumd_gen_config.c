@@ -141,8 +141,7 @@ int parse_prefix_option(const char *value, int opt) {
   if (result > 0xffff) {
     fprintf(
         stderr,
-        "Error - Prefix value should not be greater than 0xffff(65535) \n\n",
-        value, opt);
+        "Error - Prefix value should not be greater than 0xffff(65535) \n\n");
     return -1;
   }
 
