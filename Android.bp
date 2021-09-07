@@ -24,7 +24,7 @@ cc_binary_host {
         "libconfig",
     ],
     visibility: [
-       "//visibility:private"
+       "//device/google/cuttlefish/build",
     ],
 }
 
@@ -58,7 +58,7 @@ cc_binary_host {
         "libconfig",
     ],
     visibility: [
-       "//visibility:private"
+       "//device/google/cuttlefish/build",
     ],
     stl: "none",
     static_executable: true,
