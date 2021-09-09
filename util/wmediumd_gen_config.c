@@ -25,6 +25,11 @@
     }                                                                      \
   } while (0)
 
+// Adds MAC addresses for cuttlefish. Addresses will be 02:XX:XX:YY:YY:00
+// where
+//  - XX:XX prefix. enumerated from `mac_prefix`(default: 5554) to
+//          `mac_prefix` + `instance_count`(default: 16) - 1
+//  - YY:YY radio index. enumerated from 0 to `radios`(default: 2) - 1
 int add_cuttlefish_mac_addresses(config_setting_t *ids, int mac_prefix,
                                  int instance_count, int radios) {
   for (int instance_num = 0; instance_num < instance_count; ++instance_num) {
@@ -34,13 +39,14 @@ int add_cuttlefish_mac_addresses(config_setting_t *ids, int mac_prefix,
     uint8_t mac[MAC_ADDR_LEN] = {
         0,
     };
-    uint32_t instance_mac_prefix = mac_prefix + instance_num * 2;
+    uint32_t instance_mac_prefix = mac_prefix + instance_num;
 
     mac[0] = 0x02;
     mac[1] = (instance_mac_prefix >> 8) & 0xff;
     mac[2] = instance_mac_prefix & 0xff;
 
     for (int radio_num = 0; radio_num < radios; ++radio_num) {
+      mac[3] = (radio_num >> 8) & 0xff;
       mac[4] = radio_num;
 
       snprintf(iface_id, sizeof(iface_id), "%02x:%02x:%02x:%02x:%02x:%02x",
