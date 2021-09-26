@@ -39,12 +39,7 @@ cc_binary_host {
     ],
     cflags: [
         "-g",
-        "-Wall",
-        "-Wextra",
         "-Wno-unused-parameter",
-        "-O2",
-        "-MMD",
-        "-MP",
         "-Wno-format-zero-length",
         "-DCONFIG_LIBNL30",
         "-DVERSION_STR=\"" + wmediumd_version + "\"",
