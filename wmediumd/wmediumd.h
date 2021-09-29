@@ -229,6 +229,8 @@ struct wmediumd {
 	u32 need_start_notify;
 
 	FILE *pcap_file;
+
+	char *config_path;
 };
 
 struct hwsim_tx_rate {
