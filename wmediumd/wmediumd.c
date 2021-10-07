@@ -275,6 +275,8 @@ static void wmediumd_wait_for_client_ack(struct wmediumd *ctx,
 		usfstl_loop_wait_and_handle();
 }
 
+static void wmediumd_remove_client(struct wmediumd *ctx, struct client *client);
+
 static void wmediumd_notify_frame_start(struct usfstl_job *job)
 {
 	struct frame *frame = container_of(job, struct frame, start_job);
@@ -304,7 +306,11 @@ static void wmediumd_notify_frame_start(struct usfstl_job *job)
 		/* must be API socket since flags cannot otherwise be set */
 		assert(client->type == CLIENT_API_SOCK);
 
-		write(client->loop.fd, &msg, sizeof(msg));
+		if (write(client->loop.fd, &msg, sizeof(msg)) < sizeof(msg)) {
+			usfstl_loop_unregister(&client->loop);
+			wmediumd_remove_client(ctx, client);
+			continue;
+		}
 
 		wmediumd_wait_for_client_ack(ctx, client);
 	}
@@ -548,11 +554,22 @@ static void wmediumd_send_to_client(struct wmediumd *ctx,
 		len = nlmsg_total_size(nlmsg_datalen(nlmsg_hdr(msg)));
 		hdr.type = WMEDIUMD_MSG_NETLINK;
 		hdr.data_len = len;
-		write(client->loop.fd, &hdr, sizeof(hdr));
-		write(client->loop.fd, (void *)nlmsg_hdr(msg), len);
+
+		if (write(client->loop.fd, &hdr, sizeof(hdr)) < sizeof(hdr))
+			goto disconnect;
+
+		if (write(client->loop.fd, (void *)nlmsg_hdr(msg), len) < len)
+			goto disconnect;
+
 		wmediumd_wait_for_client_ack(ctx, client);
 		break;
 	}
+
+	return;
+
+	disconnect:
+	usfstl_loop_unregister(&client->loop);
+	wmediumd_remove_client(ctx, client);
 }
 
 static void wmediumd_remove_client(struct wmediumd *ctx, struct client *client)
@@ -1398,8 +1415,10 @@ int main(int argc, char *argv[])
 			w_logf(&ctx, LOG_NOTICE, "REGISTER SENT!\n");
 	}
 
-	if (api_socket)
+	if (api_socket) {
+		signal(SIGPIPE, SIG_IGN);
 		usfstl_uds_create(api_socket, wmediumd_api_connected, &ctx);
+	}
 
 	if (time_socket) {
 		usfstl_sched_ctrl_start(&ctrl, time_socket,
