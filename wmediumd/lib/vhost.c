@@ -20,7 +20,7 @@
 /* copied from uapi */
 #define VIRTIO_F_VERSION_1		32
 
-#define MAX_REGIONS 2
+#define MAX_REGIONS 8
 #define SG_STACK_PREALLOC 5
 
 struct usfstl_vhost_user_dev_int {
