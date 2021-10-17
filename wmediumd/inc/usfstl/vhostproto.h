@@ -6,7 +6,7 @@
 #ifndef _USFSTL_VHOST_PROTO_H_
 #define _USFSTL_VHOST_PROTO_H_
 
-#define MAX_REGIONS 2
+#define MAX_REGIONS 8
 
 /* these are from the vhost-user spec */
 
