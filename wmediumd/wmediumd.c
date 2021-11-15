@@ -983,6 +983,55 @@ static void wmediumd_vu_disconnected(struct usfstl_vhost_user_dev *dev)
 	wmediumd_remove_client(dev->server->data, client);
 }
 
+static int process_set_snr_message(struct wmediumd *ctx, struct wmediumd_set_snr *set_snr) {
+	struct station *node1 = get_station_by_addr(ctx, set_snr->node1_mac);
+	struct station *node2 = get_station_by_addr(ctx, set_snr->node2_mac);
+
+	if (node1 == NULL || node2 == NULL) {
+		return -1;
+	}
+
+	ctx->snr_matrix[ctx->num_stas * node2->index + node1->index] = set_snr->snr;
+	ctx->snr_matrix[ctx->num_stas * node1->index + node2->index] = set_snr->snr;
+
+	return 0;
+}
+
+static int process_reload_config_message(struct wmediumd *ctx,
+					 struct wmediumd_reload_config *reload_config) {
+	char *config_path;
+	int result = 0;
+
+	config_path = reload_config->config_path;
+
+	if (validate_config(config_path)) {
+		clear_ctx(ctx);
+		load_config(ctx, config_path, NULL);
+	} else {
+		result = -1;
+	}
+
+	return result;
+}
+
+static int process_reload_current_config_message(struct wmediumd *ctx) {
+	char *config_path;
+	int result = 0;
+
+	config_path = strdup(ctx->config_path);
+
+	if (validate_config(config_path)) {
+		clear_ctx(ctx);
+		load_config(ctx, config_path, NULL);
+	} else {
+		result = -1;
+	}
+
+	free(config_path);
+
+	return result;
+}
+
 static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {
 	.connected = wmediumd_vu_connected,
 	.handle = wmediumd_vu_handle,
@@ -1067,6 +1116,24 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 			ctx->need_start_notify++;
 
 		client->flags = control.flags;
+		break;
+	case WMEDIUMD_MSG_GET_NODES:
+		break;
+	case WMEDIUMD_MSG_SET_SNR:
+		if (process_set_snr_message(ctx, (struct wmediumd_set_snr *)data) < 0) {
+			response = WMEDIUMD_MSG_INVALID;
+                }
+		break;
+	case WMEDIUMD_MSG_RELOAD_CONFIG:
+		if (process_reload_config_message(ctx,
+				(struct wmediumd_reload_config *)data) < 0) {
+			response = WMEDIUMD_MSG_INVALID;
+                }
+		break;
+	case WMEDIUMD_MSG_RELOAD_CURRENT_CONFIG:
+		if (process_reload_current_config_message(ctx) < 0) {
+			response = WMEDIUMD_MSG_INVALID;
+                }
 		break;
 	case WMEDIUMD_MSG_ACK:
 		abort();
