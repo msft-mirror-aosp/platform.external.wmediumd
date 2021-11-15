@@ -30,6 +30,7 @@
 #include <math.h>
 
 #include "wmediumd.h"
+#include "config.h"
 
 static void string_to_mac_address(const char *str, u8 *addr)
 {
@@ -397,6 +398,22 @@ static void mirror_link(struct wmediumd *ctx, int from, int to)
 	}
 }
 
+int validate_config(const char* file) {
+	struct wmediumd ctx = {};
+
+	INIT_LIST_HEAD(&ctx.stations);
+	INIT_LIST_HEAD(&ctx.clients);
+	INIT_LIST_HEAD(&ctx.clients_to_free);
+
+	int load_result = load_config(&ctx, file, NULL);
+
+	clear_ctx(&ctx);
+
+	if (load_result < 0) return 0;
+
+	return 1;
+}
+
 /*
  *	Loads a config file into memory
  */
@@ -413,6 +430,8 @@ int load_config(struct wmediumd *ctx, const char *file, const char *per_file)
 	const char *model_type_str;
 	float default_prob_value = 0.0;
 	bool *link_map = NULL;
+
+	ctx->config_path = strdup(file);
 
 	/*initialize the config file*/
 	cf = &cfg;
@@ -654,4 +673,30 @@ fail:
 	free(ctx->error_prob_matrix);
 	config_destroy(cf);
 	return -EINVAL;
+}
+
+int clear_ctx(struct wmediumd *ctx) {
+	free(ctx->sta_array);
+	free(ctx->intf);
+	free(ctx->snr_matrix);
+	free(ctx->error_prob_matrix);
+	free(ctx->config_path);
+
+	ctx->sta_array = NULL;
+	ctx->intf = NULL;
+	ctx->snr_matrix = NULL;
+	ctx->error_prob_matrix = NULL;
+	ctx->config_path = NULL;
+
+	while (!list_empty(&ctx->stations)) {
+		struct station *station;
+
+		station = list_first_entry(&ctx->stations,
+					    struct station, list);
+
+		list_del(&station->list);
+		free(station);
+	}
+
+	return 0;
 }
