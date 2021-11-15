@@ -1065,14 +1065,6 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 	if (len != hdr.data_len)
 		goto disconnect;
 
-	if (client->wait_for_ack) {
-		assert(hdr.type == WMEDIUMD_MSG_ACK);
-		assert(hdr.data_len == 0);
-		client->wait_for_ack = false;
-		/* don't send a response to a response, of course */
-		return;
-	}
-
 	switch (hdr.type) {
 	case WMEDIUMD_MSG_REGISTER:
 		if (!list_empty(&client->list)) {
@@ -1136,7 +1128,11 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
                 }
 		break;
 	case WMEDIUMD_MSG_ACK:
-		abort();
+		assert(client->wait_for_ack == true);
+		assert(hdr.data_len == 0);
+		client->wait_for_ack = false;
+		/* don't send a response to a response, of course */
+		return;
 	default:
 		response = WMEDIUMD_MSG_INVALID;
 		break;
