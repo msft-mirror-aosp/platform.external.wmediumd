@@ -36,6 +36,26 @@ enum wmediumd_message {
 	 * with struct wmediumd_tx_start as the payload.
 	 */
 	WMEDIUMD_MSG_TX_START,
+
+	/*
+	 * TODO(@jaeman) Get list of currnet nodes.
+	 */
+	WMEDIUMD_MSG_GET_NODES,
+
+	/*
+	 * Set SNR between two nodes.
+	 */
+	WMEDIUMD_MSG_SET_SNR,
+
+	/*
+	 * Clear and reload configuration at specified path
+	 */
+	WMEDIUMD_MSG_RELOAD_CONFIG,
+
+	/*
+	 * Clear and reload configuration loaded before
+	 */
+	WMEDIUMD_MSG_RELOAD_CURRENT_CONFIG,
 };
 
 struct wmediumd_message_header {
@@ -72,6 +92,22 @@ struct wmediumd_tx_start {
 	uint64_t cookie;
 	uint32_t freq;
 	uint32_t reserved[3];
+};
+
+#pragma pack(push, 1)
+	struct wmediumd_set_snr {
+	/* MAC address of node 1 */
+	uint8_t node1_mac[6];
+	/* MAC address of node 2 */
+	uint8_t node2_mac[6];
+	/* New SNR between two nodes */
+	uint8_t snr;
+};
+#pragma pack(pop)
+
+struct wmediumd_reload_config {
+	/* path of wmediumd configuration file */
+	char config_path[0];
 };
 
 #endif /* _WMEDIUMD_API_H */

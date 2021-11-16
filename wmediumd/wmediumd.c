@@ -275,6 +275,8 @@ static void wmediumd_wait_for_client_ack(struct wmediumd *ctx,
 		usfstl_loop_wait_and_handle();
 }
 
+static void wmediumd_remove_client(struct wmediumd *ctx, struct client *client);
+
 static void wmediumd_notify_frame_start(struct usfstl_job *job)
 {
 	struct frame *frame = container_of(job, struct frame, start_job);
@@ -304,7 +306,11 @@ static void wmediumd_notify_frame_start(struct usfstl_job *job)
 		/* must be API socket since flags cannot otherwise be set */
 		assert(client->type == CLIENT_API_SOCK);
 
-		write(client->loop.fd, &msg, sizeof(msg));
+		if (write(client->loop.fd, &msg, sizeof(msg)) < sizeof(msg)) {
+			usfstl_loop_unregister(&client->loop);
+			wmediumd_remove_client(ctx, client);
+			continue;
+		}
 
 		wmediumd_wait_for_client_ack(ctx, client);
 	}
@@ -548,11 +554,22 @@ static void wmediumd_send_to_client(struct wmediumd *ctx,
 		len = nlmsg_total_size(nlmsg_datalen(nlmsg_hdr(msg)));
 		hdr.type = WMEDIUMD_MSG_NETLINK;
 		hdr.data_len = len;
-		write(client->loop.fd, &hdr, sizeof(hdr));
-		write(client->loop.fd, (void *)nlmsg_hdr(msg), len);
+
+		if (write(client->loop.fd, &hdr, sizeof(hdr)) < sizeof(hdr))
+			goto disconnect;
+
+		if (write(client->loop.fd, (void *)nlmsg_hdr(msg), len) < len)
+			goto disconnect;
+
 		wmediumd_wait_for_client_ack(ctx, client);
 		break;
 	}
+
+	return;
+
+	disconnect:
+	usfstl_loop_unregister(&client->loop);
+	wmediumd_remove_client(ctx, client);
 }
 
 static void wmediumd_remove_client(struct wmediumd *ctx, struct client *client)
@@ -983,6 +1000,55 @@ static void wmediumd_vu_disconnected(struct usfstl_vhost_user_dev *dev)
 	wmediumd_remove_client(dev->server->data, client);
 }
 
+static int process_set_snr_message(struct wmediumd *ctx, struct wmediumd_set_snr *set_snr) {
+	struct station *node1 = get_station_by_addr(ctx, set_snr->node1_mac);
+	struct station *node2 = get_station_by_addr(ctx, set_snr->node2_mac);
+
+	if (node1 == NULL || node2 == NULL) {
+		return -1;
+	}
+
+	ctx->snr_matrix[ctx->num_stas * node2->index + node1->index] = set_snr->snr;
+	ctx->snr_matrix[ctx->num_stas * node1->index + node2->index] = set_snr->snr;
+
+	return 0;
+}
+
+static int process_reload_config_message(struct wmediumd *ctx,
+					 struct wmediumd_reload_config *reload_config) {
+	char *config_path;
+	int result = 0;
+
+	config_path = reload_config->config_path;
+
+	if (validate_config(config_path)) {
+		clear_ctx(ctx);
+		load_config(ctx, config_path, NULL);
+	} else {
+		result = -1;
+	}
+
+	return result;
+}
+
+static int process_reload_current_config_message(struct wmediumd *ctx) {
+	char *config_path;
+	int result = 0;
+
+	config_path = strdup(ctx->config_path);
+
+	if (validate_config(config_path)) {
+		clear_ctx(ctx);
+		load_config(ctx, config_path, NULL);
+	} else {
+		result = -1;
+	}
+
+	free(config_path);
+
+	return result;
+}
+
 static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {
 	.connected = wmediumd_vu_connected,
 	.handle = wmediumd_vu_handle,
@@ -1015,14 +1081,6 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 	len = read(entry->fd, data, hdr.data_len);
 	if (len != hdr.data_len)
 		goto disconnect;
-
-	if (client->wait_for_ack) {
-		assert(hdr.type == WMEDIUMD_MSG_ACK);
-		assert(hdr.data_len == 0);
-		client->wait_for_ack = false;
-		/* don't send a response to a response, of course */
-		return;
-	}
 
 	switch (hdr.type) {
 	case WMEDIUMD_MSG_REGISTER:
@@ -1068,8 +1126,30 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 
 		client->flags = control.flags;
 		break;
+	case WMEDIUMD_MSG_GET_NODES:
+		break;
+	case WMEDIUMD_MSG_SET_SNR:
+		if (process_set_snr_message(ctx, (struct wmediumd_set_snr *)data) < 0) {
+			response = WMEDIUMD_MSG_INVALID;
+                }
+		break;
+	case WMEDIUMD_MSG_RELOAD_CONFIG:
+		if (process_reload_config_message(ctx,
+				(struct wmediumd_reload_config *)data) < 0) {
+			response = WMEDIUMD_MSG_INVALID;
+                }
+		break;
+	case WMEDIUMD_MSG_RELOAD_CURRENT_CONFIG:
+		if (process_reload_current_config_message(ctx) < 0) {
+			response = WMEDIUMD_MSG_INVALID;
+                }
+		break;
 	case WMEDIUMD_MSG_ACK:
-		abort();
+		assert(client->wait_for_ack == true);
+		assert(hdr.data_len == 0);
+		client->wait_for_ack = false;
+		/* don't send a response to a response, of course */
+		return;
 	default:
 		response = WMEDIUMD_MSG_INVALID;
 		break;
@@ -1398,8 +1478,10 @@ int main(int argc, char *argv[])
 			w_logf(&ctx, LOG_NOTICE, "REGISTER SENT!\n");
 	}
 
-	if (api_socket)
+	if (api_socket) {
+		signal(SIGPIPE, SIG_IGN);
 		usfstl_uds_create(api_socket, wmediumd_api_connected, &ctx);
+	}
 
 	if (time_socket) {
 		usfstl_sched_ctrl_start(&ctrl, time_socket,
