@@ -58,3 +58,18 @@ cc_binary_host {
     stl: "none",
     static_executable: true,
 }
+
+cc_binary_host {
+    name: "wmediumd_ack_test_client",
+    srcs: [
+        "tests/wmediumd_ack_test_client.c",
+    ],
+    local_include_dirs: [
+        "wmediumd/inc",
+    ],
+    visibility: [
+       "//device/google/cuttlefish/build",
+    ],
+    stl: "none",
+    static_executable: true,
+}
