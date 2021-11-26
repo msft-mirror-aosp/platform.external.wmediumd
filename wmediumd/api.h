@@ -56,6 +56,19 @@ enum wmediumd_message {
 	 * Clear and reload configuration loaded before
 	 */
 	WMEDIUMD_MSG_RELOAD_CURRENT_CONFIG,
+
+	/*
+	 * Start packet capture. If a previous capture exists, the capture will
+	 * be closed and a new capture will be started. Captured packets are
+	 * saved at the specified path of wmediumd_start_pcap. The saved file
+	 * has pcap capture file format.
+	 */
+	WMEDIUMD_MSG_START_PCAP,
+
+	/*
+	 * Stop packet capture
+	 */
+	WMEDIUMD_MSG_STOP_PCAP,
 };
 
 struct wmediumd_message_header {
@@ -108,6 +121,10 @@ struct wmediumd_tx_start {
 struct wmediumd_reload_config {
 	/* path of wmediumd configuration file */
 	char config_path[0];
+};
+
+struct wmediumd_start_pcap {
+	char pcap_path[0];
 };
 
 #endif /* _WMEDIUMD_API_H */
