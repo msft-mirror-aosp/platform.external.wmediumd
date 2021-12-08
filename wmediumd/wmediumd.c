@@ -1022,7 +1022,7 @@ static int process_reload_config_message(struct wmediumd *ctx,
 	config_path = reload_config->config_path;
 
 	if (validate_config(config_path)) {
-		clear_ctx(ctx);
+		clear_config(ctx);
 		load_config(ctx, config_path, NULL);
 	} else {
 		result = -1;
@@ -1038,7 +1038,7 @@ static int process_reload_current_config_message(struct wmediumd *ctx) {
 	config_path = strdup(ctx->config_path);
 
 	if (validate_config(config_path)) {
-		clear_ctx(ctx);
+		clear_config(ctx);
 		load_config(ctx, config_path, NULL);
 	} else {
 		result = -1;
