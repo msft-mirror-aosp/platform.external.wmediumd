@@ -40,6 +40,7 @@
 #define FTYPE_DATA		0x08
 
 #define STYPE_QOS_DATA		0x80
+#define STYPE_PROBE_REQ		0x40
 
 #define QOS_CTL_TAG1D_MASK	0x07
 
@@ -48,6 +49,10 @@ enum ieee80211_ac_number {
 	IEEE80211_AC_VI		= 1,
 	IEEE80211_AC_BE		= 2,
 	IEEE80211_AC_BK		= 3,
+};
+
+enum ieee80211_eid {
+	WLAN_EID_VENDOR_SPECIFIC = 221,
 };
 
 static const enum ieee80211_ac_number ieee802_1d_to_ac[8] = {
@@ -70,5 +75,11 @@ struct ieee80211_hdr {
 	unsigned char seq_ctrl[2];
 	unsigned char addr4[ETH_ALEN];
 };
+
+struct ieee80211_element {
+	unsigned char id;
+	unsigned char datalen;
+	unsigned char data[];
+} __attribute__((packed));
 
 #endif /* IEEE80211_H_ */
