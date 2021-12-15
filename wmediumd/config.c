@@ -407,7 +407,7 @@ int validate_config(const char* file) {
 
 	int load_result = load_config(&ctx, file, NULL);
 
-	clear_ctx(&ctx);
+	clear_config(&ctx);
 
 	if (load_result < 0) return 0;
 
@@ -675,7 +675,7 @@ fail:
 	return -EINVAL;
 }
 
-int clear_ctx(struct wmediumd *ctx) {
+int clear_config(struct wmediumd *ctx) {
 	free(ctx->sta_array);
 	free(ctx->intf);
 	free(ctx->snr_matrix);
