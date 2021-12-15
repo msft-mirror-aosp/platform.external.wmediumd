@@ -1022,7 +1022,7 @@ static int process_reload_config_message(struct wmediumd *ctx,
 	config_path = reload_config->config_path;
 
 	if (validate_config(config_path)) {
-		clear_ctx(ctx);
+		clear_config(ctx);
 		load_config(ctx, config_path, NULL);
 	} else {
 		result = -1;
@@ -1038,7 +1038,7 @@ static int process_reload_current_config_message(struct wmediumd *ctx) {
 	config_path = strdup(ctx->config_path);
 
 	if (validate_config(config_path)) {
-		clear_ctx(ctx);
+		clear_config(ctx);
 		load_config(ctx, config_path, NULL);
 	} else {
 		result = -1;
@@ -1054,6 +1054,19 @@ static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {
 	.handle = wmediumd_vu_handle,
 	.disconnected = wmediumd_vu_disconnected,
 };
+
+static void close_pcapng(struct wmediumd *ctx) {
+	if (ctx->pcap_file == NULL) {
+		return;
+	}
+
+	fflush(ctx->pcap_file);
+	fclose(ctx->pcap_file);
+
+	ctx->pcap_file = NULL;
+}
+
+static void init_pcapng(struct wmediumd *ctx, const char *filename);
 
 static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 {
@@ -1143,6 +1156,12 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 		if (process_reload_current_config_message(ctx) < 0) {
 			response = WMEDIUMD_MSG_INVALID;
                 }
+		break;
+	case WMEDIUMD_MSG_START_PCAP:
+		init_pcapng(ctx, ((struct wmediumd_start_pcap *)data)->pcap_path);
+		break;
+	case WMEDIUMD_MSG_STOP_PCAP:
+		close_pcapng(ctx);
 		break;
 	case WMEDIUMD_MSG_ACK:
 		assert(client->wait_for_ack == true);
@@ -1331,6 +1350,10 @@ static void init_pcapng(struct wmediumd *ctx, const char *filename)
 		.opt_if_tsresol.val = 6, // usec
 		.blocklen2 = sizeof(idb),
 	};
+
+	if (ctx->pcap_file != NULL) {
+		close_pcapng(ctx);
+	}
 
 	if (!filename)
 		return;
