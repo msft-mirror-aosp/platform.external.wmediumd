@@ -134,6 +134,54 @@ static inline bool frame_is_data_qos(struct frame *frame)
 		(FTYPE_DATA | STYPE_QOS_DATA);
 }
 
+static inline bool frame_is_probe_req(struct frame *frame)
+{
+	struct ieee80211_hdr *hdr = (void *)frame->data;
+
+	return (hdr->frame_control[0] & (FCTL_FTYPE | STYPE_PROBE_REQ)) ==
+		(FTYPE_MGMT | STYPE_PROBE_REQ);
+}
+
+
+static inline bool frame_has_zero_rates(const struct frame *frame)
+{
+	for (int i = 0; i < frame->tx_rates_count; i++) {
+		if (frame->tx_rates[i].idx < 0)
+			break;
+
+		if (frame->tx_rates[i].count > 0) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static inline void fill_tx_rates(struct frame *frame)
+{
+	if (frame->tx_rates_count <= 0) {
+		return;
+	}
+
+	int max_index = get_max_index();
+
+	/* Starting from OFDM rate (See per.c#rateset) */
+	const int basic_rate_start = 4; /* 6 mbps */
+
+	int i;
+	int rate_count = min(max_index - basic_rate_start + 1, frame->tx_rates_count);
+
+	for (i = 0; i < rate_count; i++) {
+		frame->tx_rates[i].idx = basic_rate_start + rate_count - i - 1;
+		frame->tx_rates[i].count = 4;
+	}
+
+	for (; i < frame->tx_rates_count; i++) {
+		frame->tx_rates[i].idx = -1;
+		frame->tx_rates[i].count = 0;
+	}
+}
+
 static inline u8 *frame_get_qos_ctl(struct frame *frame)
 {
 	struct ieee80211_hdr *hdr = (void *)frame->data;
@@ -416,6 +464,15 @@ static void queue_frame(struct wmediumd *ctx, struct station *station,
 	frame->signal = snr + NOISE_LEVEL;
 
 	noack = is_multicast_ether_addr(dest);
+
+	/*
+	 * TODO(b/211353765) Remove this when fundamenal solution is applied
+	 *
+	 *   Temporary workaround for relaying probe_req frame.
+	 */
+	if (frame_is_probe_req(frame) && frame_has_zero_rates(frame)) {
+		fill_tx_rates(frame);
+	}
 
 	double choice = drand48();
 
