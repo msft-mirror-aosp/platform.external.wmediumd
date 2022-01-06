@@ -271,6 +271,11 @@ int read_per_file(struct wmediumd *ctx, const char *file_name)
 	return EXIT_SUCCESS;
 }
 
+int get_max_index(void)
+{
+	return rate_len - 1;
+}
+
 int index_to_rate(size_t index, u32 freq)
 {
 	if (freq > 5000)
