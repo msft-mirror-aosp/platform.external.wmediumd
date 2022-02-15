@@ -134,6 +134,54 @@ static inline bool frame_is_data_qos(struct frame *frame)
 		(FTYPE_DATA | STYPE_QOS_DATA);
 }
 
+static inline bool frame_is_probe_req(struct frame *frame)
+{
+	struct ieee80211_hdr *hdr = (void *)frame->data;
+
+	return (hdr->frame_control[0] & (FCTL_FTYPE | STYPE_PROBE_REQ)) ==
+		(FTYPE_MGMT | STYPE_PROBE_REQ);
+}
+
+
+static inline bool frame_has_zero_rates(const struct frame *frame)
+{
+	for (int i = 0; i < frame->tx_rates_count; i++) {
+		if (frame->tx_rates[i].idx < 0)
+			break;
+
+		if (frame->tx_rates[i].count > 0) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static inline void fill_tx_rates(struct frame *frame)
+{
+	if (frame->tx_rates_count <= 0) {
+		return;
+	}
+
+	int max_index = get_max_index();
+
+	/* Starting from OFDM rate (See per.c#rateset) */
+	const int basic_rate_start = 4; /* 6 mbps */
+
+	int i;
+	int rate_count = min(max_index - basic_rate_start + 1, frame->tx_rates_count);
+
+	for (i = 0; i < rate_count; i++) {
+		frame->tx_rates[i].idx = basic_rate_start + rate_count - i - 1;
+		frame->tx_rates[i].count = 4;
+	}
+
+	for (; i < frame->tx_rates_count; i++) {
+		frame->tx_rates[i].idx = -1;
+		frame->tx_rates[i].count = 0;
+	}
+}
+
 static inline u8 *frame_get_qos_ctl(struct frame *frame)
 {
 	struct ieee80211_hdr *hdr = (void *)frame->data;
@@ -416,6 +464,15 @@ static void queue_frame(struct wmediumd *ctx, struct station *station,
 	frame->signal = snr + NOISE_LEVEL;
 
 	noack = is_multicast_ether_addr(dest);
+
+	/*
+	 * TODO(b/211353765) Remove this when fundamenal solution is applied
+	 *
+	 *   Temporary workaround for relaying probe_req frame.
+	 */
+	if (frame_is_probe_req(frame) && frame_has_zero_rates(frame)) {
+		fill_tx_rates(frame);
+	}
 
 	double choice = drand48();
 
@@ -1022,7 +1079,7 @@ static int process_reload_config_message(struct wmediumd *ctx,
 	config_path = reload_config->config_path;
 
 	if (validate_config(config_path)) {
-		clear_ctx(ctx);
+		clear_config(ctx);
 		load_config(ctx, config_path, NULL);
 	} else {
 		result = -1;
@@ -1038,7 +1095,7 @@ static int process_reload_current_config_message(struct wmediumd *ctx) {
 	config_path = strdup(ctx->config_path);
 
 	if (validate_config(config_path)) {
-		clear_ctx(ctx);
+		clear_config(ctx);
 		load_config(ctx, config_path, NULL);
 	} else {
 		result = -1;
@@ -1054,6 +1111,19 @@ static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {
 	.handle = wmediumd_vu_handle,
 	.disconnected = wmediumd_vu_disconnected,
 };
+
+static void close_pcapng(struct wmediumd *ctx) {
+	if (ctx->pcap_file == NULL) {
+		return;
+	}
+
+	fflush(ctx->pcap_file);
+	fclose(ctx->pcap_file);
+
+	ctx->pcap_file = NULL;
+}
+
+static void init_pcapng(struct wmediumd *ctx, const char *filename);
 
 static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 {
@@ -1143,6 +1213,12 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 		if (process_reload_current_config_message(ctx) < 0) {
 			response = WMEDIUMD_MSG_INVALID;
                 }
+		break;
+	case WMEDIUMD_MSG_START_PCAP:
+		init_pcapng(ctx, ((struct wmediumd_start_pcap *)data)->pcap_path);
+		break;
+	case WMEDIUMD_MSG_STOP_PCAP:
+		close_pcapng(ctx);
 		break;
 	case WMEDIUMD_MSG_ACK:
 		assert(client->wait_for_ack == true);
@@ -1331,6 +1407,10 @@ static void init_pcapng(struct wmediumd *ctx, const char *filename)
 		.opt_if_tsresol.val = 6, // usec
 		.blocklen2 = sizeof(idb),
 	};
+
+	if (ctx->pcap_file != NULL) {
+		close_pcapng(ctx);
+	}
 
 	if (!filename)
 		return;
