@@ -128,7 +128,7 @@ int main(int argc, char **argv) {
   addr.sun_family = AF_UNIX;
 
   if (strlen(wmediumd_api_server_path) >= sizeof(addr.sun_path)) {
-    fprintf(stderr, "error: unix socket path is too long(maximum %d)\n",
+    fprintf(stderr, "error: unix socket path is too long(maximum %zu)\n",
             sizeof(addr.sun_path) - 1);
     print_help(-1);
   }
