@@ -12,7 +12,7 @@
 #define MAC_ADDR_LEN 6
 #define STR_MAC_ADDR_LEN 17
 
-#define OPENWRT_MAC_ADDR "02:00:00:00:00:00"
+#define OPENWRT_MAC_ADDR "42:00:00:00:00:00"
 
 #define APPEND_LAST -1
 
