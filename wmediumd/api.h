@@ -7,6 +7,8 @@
 #define _WMEDIUMD_API_H
 #include <stdint.h>
 
+#include "ieee80211.h"
+
 enum wmediumd_message {
 	/* invalid message */
 	WMEDIUMD_MSG_INVALID,
@@ -37,10 +39,7 @@ enum wmediumd_message {
 	 */
 	WMEDIUMD_MSG_TX_START,
 
-	/*
-	 * TODO(@jaeman) Get list of currnet nodes.
-	 */
-	WMEDIUMD_MSG_GET_NODES,
+	WMEDIUMD_MSG_GET_STATIONS,
 
 	/*
 	 * Set SNR between two nodes.
@@ -69,6 +68,8 @@ enum wmediumd_message {
 	 * Stop packet capture
 	 */
 	WMEDIUMD_MSG_STOP_PCAP,
+
+	WMEDIUMD_MSG_STATIONS_LIST,
 };
 
 struct wmediumd_message_header {
@@ -126,5 +127,22 @@ struct wmediumd_reload_config {
 struct wmediumd_start_pcap {
 	char pcap_path[0];
 };
+
+#pragma pack(push, 1)
+struct wmediumd_station_info {
+	char addr[ETH_ALEN];
+	char hwaddr[ETH_ALEN];
+
+	double x;
+	double y;
+
+	int tx_power;
+};
+
+struct wmediumd_station_infos {
+	uint32_t count;
+	struct wmediumd_station_info stations[0];
+};
+#pragma pack(pop)
 
 #endif /* _WMEDIUMD_API_H */
