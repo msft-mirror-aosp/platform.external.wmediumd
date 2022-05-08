@@ -902,7 +902,7 @@ static void _process_messages(struct nl_msg *msg,
 	struct frame *frame;
 	struct ieee80211_hdr *hdr;
 	u8 *src, *hwaddr, *addr;
-	void *new;
+	void *new_addrs;
 	unsigned int i;
 
 	genlmsg_parse(nlh, 0, attrs, HWSIM_ATTR_MAX, NULL);
@@ -976,13 +976,16 @@ static void _process_messages(struct nl_msg *msg,
 		if (!sender)
 			break;
 		for (i = 0; i < sender->n_addrs; i++) {
-			if (memcmp(sender->addrs[i].addr, addr, ETH_ALEN) == 0)
+			if (memcmp(sender->addrs[i].addr, addr, ETH_ALEN) == 0) {
+				sender->addrs[i].count += 1;
 				return;
+			}
 		}
-		new = realloc(sender->addrs, ETH_ALEN * (sender->n_addrs + 1));
-		if (!new)
+		new_addrs = realloc(sender->addrs, sizeof(struct addr) * (sender->n_addrs + 1));
+		if (!new_addrs)
 			break;
-		sender->addrs = new;
+		sender->addrs = new_addrs;
+		sender->addrs[sender->n_addrs].count = 1;
 		memcpy(sender->addrs[sender->n_addrs].addr, addr, ETH_ALEN);
 		sender->n_addrs += 1;
 		break;
@@ -998,10 +1001,13 @@ static void _process_messages(struct nl_msg *msg,
 		for (i = 0; i < sender->n_addrs; i++) {
 			if (memcmp(sender->addrs[i].addr, addr, ETH_ALEN))
 				continue;
-			sender->n_addrs -= 1;
-			memmove(sender->addrs[i].addr,
-				sender->addrs[sender->n_addrs].addr,
-				ETH_ALEN);
+			sender->addrs[i].count -= 1;
+			if (sender->addrs[i].count <= 0) {
+				sender->n_addrs -= 1;
+				memmove(&sender->addrs[i],
+					&sender->addrs[sender->n_addrs],
+					sizeof(struct addr));
+			}
 			break;
 		}
 		break;
@@ -1106,6 +1112,42 @@ static int process_reload_current_config_message(struct wmediumd *ctx) {
 	return result;
 }
 
+static int process_get_stations_message(struct wmediumd *ctx, ssize_t *response_len, unsigned char **response_data) {
+	struct station *station;
+	int station_count = 0;
+
+	list_for_each_entry(station, &ctx->stations, list) {
+		if (station->client != NULL) {
+			++station_count;
+		}
+	}
+
+	*response_len = sizeof(uint32_t) + sizeof(struct wmediumd_station_info) * station_count;
+	struct wmediumd_station_infos *station_infos = malloc(*response_len);
+
+	station_infos->count = station_count;
+	int station_index = 0;
+
+	list_for_each_entry(station, &ctx->stations, list) {
+		if (station->client != NULL) {
+			struct wmediumd_station_info *station_info = &station_infos->stations[station_index];
+			memcpy(station_info->addr, station->addr, ETH_ALEN);
+			memcpy(station_info->hwaddr, station->hwaddr, ETH_ALEN);
+
+			station_info->x = station->x;
+			station_info->y = station->y;
+
+			station_info->tx_power = station->tx_power;
+
+			station_index++;
+		}
+	}
+
+	*response_data = (unsigned char *)station_infos;
+
+	return 0;
+}
+
 static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {
 	.connected = wmediumd_vu_connected,
 	.handle = wmediumd_vu_handle,
@@ -1134,6 +1176,8 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 	struct wmediumd_message_control control = {};
 	struct nl_msg *nlmsg;
 	unsigned char *data;
+	ssize_t response_len = 0;
+	unsigned char *response_data = NULL;
 	ssize_t len;
 
 	len = read(entry->fd, &hdr, sizeof(hdr));
@@ -1196,7 +1240,11 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 
 		client->flags = control.flags;
 		break;
-	case WMEDIUMD_MSG_GET_NODES:
+	case WMEDIUMD_MSG_GET_STATIONS:
+		if (process_get_stations_message(ctx, &response_len, &response_data) < 0) {
+			response = WMEDIUMD_MSG_INVALID;
+		}
+		response = WMEDIUMD_MSG_STATIONS_LIST;
 		break;
 	case WMEDIUMD_MSG_SET_SNR:
 		if (process_set_snr_message(ctx, (struct wmediumd_set_snr *)data) < 0) {
@@ -1233,10 +1281,24 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 
 	/* return a response */
 	hdr.type = response;
-	hdr.data_len = 0;
+	hdr.data_len = response_len;
 	len = write(entry->fd, &hdr, sizeof(hdr));
 	if (len != sizeof(hdr))
 		goto disconnect;
+
+	if (response_data != NULL) {
+		if (response_len != 0) {
+			len = write(entry->fd, response_data, response_len);
+
+			if (len != response_len) {
+				free(response_data);
+				goto disconnect;
+			}
+		}
+
+		free(response_data);
+		response_data = NULL;
+	}
 
 	return;
 disconnect:
