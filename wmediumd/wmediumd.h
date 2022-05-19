@@ -110,7 +110,7 @@ enum {
 
 #define VERSION_NR 1
 
-#define SNR_DEFAULT 100
+#define SNR_DEFAULT 90
 
 #include <stdint.h>
 #include <stdbool.h>
