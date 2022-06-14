@@ -110,7 +110,7 @@ static int calc_path_loss_free_space(void *model_param,
 	 * https://en.wikipedia.org/wiki/Free-space_path_loss
 	 */
 	PL = 20.0 * log10(4.0 * M_PI * d * FREQ_1CH / SPEED_LIGHT);
-	return PL > 0 ? PL : 0;
+	return PL;
 }
 /*
  * Calculate path loss based on a log distance model
@@ -146,7 +146,7 @@ static int calc_path_loss_log_distance(void *model_param,
 	 */
 	PL = PL0 + 10.0 * param->path_loss_exponent * log10(d) + param->Xg;
 
-	return PL > 0 ? PL : 0;
+	return PL;
 }
 /*
  * Calculate path loss based on a itu model
@@ -176,7 +176,7 @@ static int calc_path_loss_itu(void *model_param,
 	 * nFLOORS: number of floors
 	 */
 	PL = 20.0 * log10(FREQ_1CH) + N * log10(d) + param->LF * param->nFLOORS - 28;
-	return PL > 0 ? PL : 0;
+	return PL;
 }
 
 static void recalc_path_loss(struct wmediumd *ctx)
@@ -699,8 +699,4 @@ int clear_config(struct wmediumd *ctx) {
 	}
 
 	return 0;
-}
-
-void calc_path_loss(struct wmediumd *ctx) {
-	recalc_path_loss(ctx);
 }

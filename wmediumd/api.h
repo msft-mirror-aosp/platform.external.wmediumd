@@ -70,11 +70,6 @@ enum wmediumd_message {
 	WMEDIUMD_MSG_STOP_PCAP,
 
 	WMEDIUMD_MSG_STATIONS_LIST,
-
-	/*
-	 * Set position of station.
-	 */
-	WMEDIUMD_MSG_SET_POSITION,
 };
 
 struct wmediumd_message_header {
@@ -114,7 +109,7 @@ struct wmediumd_tx_start {
 };
 
 #pragma pack(push, 1)
-struct wmediumd_set_snr {
+	struct wmediumd_set_snr {
 	/* MAC address of node 1 */
 	uint8_t node1_mac[6];
 	/* MAC address of node 2 */
@@ -147,15 +142,6 @@ struct wmediumd_station_info {
 struct wmediumd_station_infos {
 	uint32_t count;
 	struct wmediumd_station_info stations[0];
-};
-
-struct wmediumd_set_position {
-	/* MAC address */
-	uint8_t mac[6];
-	/* X position of station */
-	double x;
-	/* Y position of station */
-	double y;
 };
 #pragma pack(pop)
 

@@ -14,8 +14,6 @@
 
 #define OPENWRT_MAC_ADDR "42:00:00:00:00:00"
 
-#define TX_POWER_DEFAULT 10
-
 #define APPEND_LAST -1
 
 #define PREVENT_MULTIPLE_OPTION(var, zero_val)                             \
@@ -56,32 +54,6 @@ int add_cuttlefish_mac_addresses(config_setting_t *ids, int mac_prefix,
 
       config_setting_set_string_elem(ids, APPEND_LAST, iface_id);
     }
-  }
-
-  return 0;
-}
-
-int add_cuttlefish_path_loss_model(config_setting_t *model, int instance_count) {
-  config_setting_t *type = config_setting_add(model, "type", CONFIG_TYPE_STRING);
-  config_setting_set_string(type, "path_loss");
-
-  config_setting_t *model_name = config_setting_add(model, "model_name", CONFIG_TYPE_STRING);
-  config_setting_set_string(model_name, "free_space");
-
-  config_setting_t *positions = config_setting_add(model, "positions", CONFIG_TYPE_LIST);
-  config_setting_t *directions = config_setting_add(model, "directions", CONFIG_TYPE_LIST);
-  config_setting_t *tx_powers = config_setting_add(model, "tx_powers", CONFIG_TYPE_ARRAY);
-
-  for (int idx = 0; idx < instance_count; ++idx) {
-    config_setting_t *position = config_setting_add(positions, NULL, CONFIG_TYPE_LIST);
-    config_setting_set_float_elem(position, APPEND_LAST, 0.0);
-    config_setting_set_float_elem(position, APPEND_LAST, 0.0);
-
-    config_setting_t *direction = config_setting_add(directions, NULL, CONFIG_TYPE_LIST);
-    config_setting_set_float_elem(direction, APPEND_LAST, 0.0);
-    config_setting_set_float_elem(direction, APPEND_LAST, 0.0);
-
-    config_setting_set_float_elem(tx_powers, APPEND_LAST, TX_POWER_DEFAULT);
   }
 
   return 0;
@@ -280,9 +252,6 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Error - Failed to add cuttlefish mac address\n\n");
     print_help(-1);
   }
-
-  config_setting_t *model = config_setting_add(root, "model", CONFIG_TYPE_GROUP);
-  add_cuttlefish_path_loss_model(model, config_setting_length(ids));
 
   config_setting_set_int(count, config_setting_length(ids));
 
