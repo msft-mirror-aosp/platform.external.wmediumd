@@ -147,6 +147,7 @@ struct wqueue {
 
 struct addr {
 	u8 addr[ETH_ALEN];
+	uint16_t count;
 };
 
 struct station {
