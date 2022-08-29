@@ -12,7 +12,8 @@
 #define MAC_ADDR_LEN 6
 #define STR_MAC_ADDR_LEN 17
 
-#define OPENWRT_MAC_ADDR "42:00:00:00:00:00"
+#define OPENWRT_MAC_ADDR_1 "42:00:00:00:00:00"
+#define OPENWRT_MAC_ADDR_2 "42:00:00:00:01:00"
 
 #define TX_POWER_DEFAULT 10
 
@@ -190,7 +191,8 @@ int main(int argc, char **argv) {
       config_setting_add(ifaces, "count", CONFIG_TYPE_INT);
   config_setting_t *ids = config_setting_add(ifaces, "ids", CONFIG_TYPE_ARRAY);
 
-  config_setting_set_string_elem(ids, APPEND_LAST, OPENWRT_MAC_ADDR);
+  config_setting_set_string_elem(ids, APPEND_LAST, OPENWRT_MAC_ADDR_1);
+  config_setting_set_string_elem(ids, APPEND_LAST, OPENWRT_MAC_ADDR_2);
 
   FILE *output = stdout;
   char *out_path = NULL;
