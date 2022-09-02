@@ -902,7 +902,7 @@ static void _process_messages(struct nl_msg *msg,
 	struct frame *frame;
 	struct ieee80211_hdr *hdr;
 	u8 *src, *hwaddr, *addr;
-	void *new;
+	void *new_addrs;
 	unsigned int i;
 
 	genlmsg_parse(nlh, 0, attrs, HWSIM_ATTR_MAX, NULL);
@@ -976,13 +976,16 @@ static void _process_messages(struct nl_msg *msg,
 		if (!sender)
 			break;
 		for (i = 0; i < sender->n_addrs; i++) {
-			if (memcmp(sender->addrs[i].addr, addr, ETH_ALEN) == 0)
+			if (memcmp(sender->addrs[i].addr, addr, ETH_ALEN) == 0) {
+				sender->addrs[i].count += 1;
 				return;
+			}
 		}
-		new = realloc(sender->addrs, ETH_ALEN * (sender->n_addrs + 1));
-		if (!new)
+		new_addrs = realloc(sender->addrs, sizeof(struct addr) * (sender->n_addrs + 1));
+		if (!new_addrs)
 			break;
-		sender->addrs = new;
+		sender->addrs = new_addrs;
+		sender->addrs[sender->n_addrs].count = 1;
 		memcpy(sender->addrs[sender->n_addrs].addr, addr, ETH_ALEN);
 		sender->n_addrs += 1;
 		break;
@@ -998,10 +1001,13 @@ static void _process_messages(struct nl_msg *msg,
 		for (i = 0; i < sender->n_addrs; i++) {
 			if (memcmp(sender->addrs[i].addr, addr, ETH_ALEN))
 				continue;
-			sender->n_addrs -= 1;
-			memmove(sender->addrs[i].addr,
-				sender->addrs[sender->n_addrs].addr,
-				ETH_ALEN);
+			sender->addrs[i].count -= 1;
+			if (sender->addrs[i].count <= 0) {
+				sender->n_addrs -= 1;
+				memmove(&sender->addrs[i],
+					&sender->addrs[sender->n_addrs],
+					sizeof(struct addr));
+			}
 			break;
 		}
 		break;
@@ -1142,6 +1148,21 @@ static int process_get_stations_message(struct wmediumd *ctx, ssize_t *response_
 	return 0;
 }
 
+static int process_set_position_message(struct wmediumd *ctx, struct wmediumd_set_position *set_position) {
+	struct station *node = get_station_by_addr(ctx, set_position->mac);
+
+	if (node == NULL) {
+		return -1;
+	}
+
+	node->x = set_position->x;
+	node->y = set_position->y;
+
+	calc_path_loss(ctx);
+
+	return 0;
+}
+
 static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {
 	.connected = wmediumd_vu_connected,
 	.handle = wmediumd_vu_handle,
@@ -1261,6 +1282,11 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 		break;
 	case WMEDIUMD_MSG_STOP_PCAP:
 		close_pcapng(ctx);
+		break;
+	case WMEDIUMD_MSG_SET_POSITION:
+		if (process_set_position_message(ctx, (struct wmediumd_set_position *)data) < 0) {
+			response = WMEDIUMD_MSG_INVALID;
+		}
 		break;
 	case WMEDIUMD_MSG_ACK:
 		assert(client->wait_for_ack == true);
