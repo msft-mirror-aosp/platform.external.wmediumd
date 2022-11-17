@@ -19,6 +19,10 @@
 
 #define APPEND_LAST -1
 
+#define DEFAULT_RADIO_COUNT 2
+#define DEFAULT_CUTTLEFISH_INSTANCE_COUNT 64
+#define DEFAULT_MAC_PREFIX 5554
+
 #define PREVENT_MULTIPLE_OPTION(var, zero_val)                             \
   do {                                                                     \
     if ((var) != (zero_val)) {                                             \
@@ -258,18 +262,18 @@ int main(int argc, char **argv) {
     }
   }
 
-  /* Use default radio count if not specified */
+  /* Use default values if not specified */
 
   if (radio_count == -1) {
-    radio_count = 2;
+    radio_count = DEFAULT_RADIO_COUNT;
   }
 
   if (cuttlefish_instance_count == -1) {
-    cuttlefish_instance_count = 16;
+    cuttlefish_instance_count = DEFAULT_CUTTLEFISH_INSTANCE_COUNT;
   }
 
   if (mac_prefix == -1) {
-    mac_prefix = 5554;
+    mac_prefix = DEFAULT_MAC_PREFIX;
   }
 
   if (add_cuttlefish_mac_addresses(ids, mac_prefix, cuttlefish_instance_count,
