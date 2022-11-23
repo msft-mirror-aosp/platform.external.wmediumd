@@ -155,6 +155,8 @@ struct station {
 	u8 addr[ETH_ALEN];		/* virtual interface mac address */
 	u8 hwaddr[ETH_ALEN];		/* hardware address of hwsim radio */
 	double x, y;			/* position of the station [m] */
+	char *lci;			/* LCI */
+	char *civicloc;			/* CIVIC */
 	double dir_x, dir_y;		/* direction of the station [meter per MOVE_INTERVAL] */
 	int tx_power;			/* transmission power [dBm] */
 	struct wqueue queues[IEEE80211_NUM_ACS];

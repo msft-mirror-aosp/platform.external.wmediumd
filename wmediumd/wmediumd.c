@@ -58,6 +58,23 @@ enum {
 	HWSIM_NUM_VQS,
 };
 
+static char *stpcpy_safe(char *dst, const char *src) {
+	if (dst == NULL) {
+		return NULL;
+	}
+
+	if (src == NULL) {
+		*dst = '\0';
+		return dst;
+	}
+
+	return stpcpy(dst, src);
+}
+
+static int strlen_safe(const char *src) {
+	return src == NULL ? 0 : strlen(src);
+}
+
 static inline int div_round(int a, int b)
 {
 	return (a + b - 1) / b;
@@ -1115,18 +1132,33 @@ static int process_reload_current_config_message(struct wmediumd *ctx) {
 static int process_get_stations_message(struct wmediumd *ctx, ssize_t *response_len, unsigned char **response_data) {
 	struct station *station;
 	int station_count = 0;
+	int extra_data_len = 0;
 
+	// *reponse_data contains struct wmediumd_station_infos
+	// and then lci and civiclocs for each station follows afterwards.
 	list_for_each_entry(station, &ctx->stations, list) {
 		if (station->client != NULL) {
 			++station_count;
+			extra_data_len += strlen_safe(station->lci) + 1;
+			extra_data_len += strlen_safe(station->civicloc) + 1;
 		}
 	}
 
-	*response_len = sizeof(uint32_t) + sizeof(struct wmediumd_station_info) * station_count;
-	struct wmediumd_station_infos *station_infos = malloc(*response_len);
+	int station_len = sizeof(uint32_t) + sizeof(struct wmediumd_station_info) * station_count;
+	*response_len = station_len + extra_data_len;
+	*response_data = malloc(*response_len);
 
+	if (*response_data == NULL) {
+		w_logf(ctx, LOG_ERR, "%s: failed allocate response data\n", __func__);
+		return -1;
+	}
+
+	struct wmediumd_station_infos *station_infos = (struct wmediumd_station_infos *)*response_data;
 	station_infos->count = station_count;
 	int station_index = 0;
+	// Pointer to the memory after structs wmediumd_station_infos
+	// to write lci and civicloc for each station.
+	char *extra_data_cursor = (char *)&(station_infos->stations[station_count]);
 
 	list_for_each_entry(station, &ctx->stations, list) {
 		if (station->client != NULL) {
@@ -1136,14 +1168,14 @@ static int process_get_stations_message(struct wmediumd *ctx, ssize_t *response_
 
 			station_info->x = station->x;
 			station_info->y = station->y;
-
+			station_info->lci_offset = extra_data_cursor - (char *)station_info;
+			extra_data_cursor = stpcpy_safe(extra_data_cursor, station->lci) + 1;
+			station_info->civicloc_offset = extra_data_cursor - (char *)station_info;
+			extra_data_cursor = stpcpy_safe(extra_data_cursor, station->civicloc) + 1;
 			station_info->tx_power = station->tx_power;
-
 			station_index++;
 		}
 	}
-
-	*response_data = (unsigned char *)station_infos;
 
 	return 0;
 }
@@ -1161,6 +1193,44 @@ static int process_set_position_message(struct wmediumd *ctx, struct wmediumd_se
 	calc_path_loss(ctx);
 
 	return 0;
+}
+
+static int process_set_lci_message(struct wmediumd *ctx, struct wmediumd_set_lci *set_lci, size_t data_len) {
+	struct station *node = get_station_by_addr(ctx, set_lci->mac);
+
+	if (node == NULL) {
+		return -1;
+	}
+	int expected_len = data_len - offsetof(struct wmediumd_set_lci, lci) - 1;
+	if (set_lci->lci[expected_len] != '\0') {
+		return -1;
+	}
+
+	if (node->lci) {
+		free(node->lci);
+	}
+	node->lci = strdup(set_lci->lci);
+
+	return node->lci != NULL;
+}
+
+static int process_set_civicloc_message(struct wmediumd *ctx, struct wmediumd_set_civicloc *set_civicloc, size_t data_len) {
+	struct station *node = get_station_by_addr(ctx, set_civicloc->mac);
+
+	if (node == NULL) {
+		return -1;
+	}
+	int expected_len = data_len - offsetof(struct wmediumd_set_civicloc, civicloc) - 1;
+	if (set_civicloc->civicloc[expected_len] != '\0') {
+		return -1;
+	}
+
+	if (node->civicloc) {
+		free(node->civicloc);
+	}
+	node->civicloc = strdup(set_civicloc->civicloc);
+
+	return node->civicloc != NULL;
 }
 
 static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {
@@ -1196,20 +1266,31 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 	ssize_t len;
 
 	len = read(entry->fd, &hdr, sizeof(hdr));
-	if (len != sizeof(hdr))
+	if (len != sizeof(hdr)) {
+		if (len > 0) {
+			// Skipping log if the fd is closed.
+			w_logf(ctx, LOG_ERR, "%s: failed to read header\n", __func__);
+		}
 		goto disconnect;
+	}
 
 	/* safety valve */
-	if (hdr.data_len > 1024 * 1024)
+	if (hdr.data_len > 1024 * 1024) {
+		w_logf(ctx, LOG_ERR, "%s: too large data\n", __func__);
 		goto disconnect;
+	}
 
 	data = malloc(hdr.data_len);
-	if (!data)
+	if (!data) {
+		w_logf(ctx, LOG_ERR, "%s: failed to malloc\n", __func__);
 		goto disconnect;
+	}
 
 	len = read(entry->fd, data, hdr.data_len);
-	if (len != hdr.data_len)
+	if (len != hdr.data_len) {
+		w_logf(ctx, LOG_ERR, "%s: failed to read data\n", __func__);
 		goto disconnect;
+	}
 
 	switch (hdr.type) {
 	case WMEDIUMD_MSG_REGISTER:
@@ -1264,18 +1345,18 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 	case WMEDIUMD_MSG_SET_SNR:
 		if (process_set_snr_message(ctx, (struct wmediumd_set_snr *)data) < 0) {
 			response = WMEDIUMD_MSG_INVALID;
-                }
+		}
 		break;
 	case WMEDIUMD_MSG_RELOAD_CONFIG:
 		if (process_reload_config_message(ctx,
 				(struct wmediumd_reload_config *)data) < 0) {
 			response = WMEDIUMD_MSG_INVALID;
-                }
+		}
 		break;
 	case WMEDIUMD_MSG_RELOAD_CURRENT_CONFIG:
 		if (process_reload_current_config_message(ctx) < 0) {
 			response = WMEDIUMD_MSG_INVALID;
-                }
+		}
 		break;
 	case WMEDIUMD_MSG_START_PCAP:
 		init_pcapng(ctx, ((struct wmediumd_start_pcap *)data)->pcap_path);
@@ -1288,6 +1369,20 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 			response = WMEDIUMD_MSG_INVALID;
 		}
 		break;
+	case WMEDIUMD_MSG_SET_LCI:
+		if (process_set_lci_message(ctx,
+				(struct wmediumd_set_lci *)data,
+				hdr.data_len) < 0) {
+			response = WMEDIUMD_MSG_INVALID;
+		}
+		break;
+	case WMEDIUMD_MSG_SET_CIVICLOC:
+		if (process_set_civicloc_message(ctx,
+				(struct wmediumd_set_civicloc *)data,
+				hdr.data_len) < 0) {
+			response = WMEDIUMD_MSG_INVALID;
+		}
+		break;
 	case WMEDIUMD_MSG_ACK:
 		assert(client->wait_for_ack == true);
 		assert(hdr.data_len == 0);
@@ -1295,6 +1390,7 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 		/* don't send a response to a response, of course */
 		return;
 	default:
+		w_logf(ctx, LOG_ERR, "%s: unknown message\n", __func__);
 		response = WMEDIUMD_MSG_INVALID;
 		break;
 	}
@@ -1303,8 +1399,10 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 	hdr.type = response;
 	hdr.data_len = response_len;
 	len = write(entry->fd, &hdr, sizeof(hdr));
-	if (len != sizeof(hdr))
+	if (len != sizeof(hdr)) {
+		w_logf(ctx, LOG_ERR, "%s: failed to write response header\n", __func__);
 		goto disconnect;
+	}
 
 	if (response_data != NULL) {
 		if (response_len != 0) {
@@ -1312,6 +1410,7 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 
 			if (len != response_len) {
 				free(response_data);
+				w_logf(ctx, LOG_ERR, "%s: failed to write response data\n", __func__);
 				goto disconnect;
 			}
 		}
