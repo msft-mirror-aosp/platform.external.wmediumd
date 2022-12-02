@@ -31,9 +31,11 @@
 #include <getopt.h>
 #include <signal.h>
 #include <math.h>
+#include <sys/syslog.h>
 #include <sys/timerfd.h>
 #include <errno.h>
 #include <limits.h>
+#include <time.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <endian.h>
@@ -47,6 +49,7 @@
 #include "ieee80211.h"
 #include "config.h"
 #include "api.h"
+#include "pmsr.h"
 
 USFSTL_SCHEDULER(scheduler);
 
@@ -78,6 +81,37 @@ static int strlen_safe(const char *src) {
 static inline int div_round(int a, int b)
 {
 	return (a + b - 1) / b;
+}
+
+static inline u64 sec_to_ns(time_t sec)
+{
+	return sec * 1000 * 1000 * 1000;
+}
+
+static inline u64 ns_to_us(u64 ns)
+{
+	return ns / 1000L;
+}
+
+static inline u64 ts_to_ns(struct timespec ts)
+{
+	return sec_to_ns(ts.tv_sec) + ts.tv_nsec;
+}
+
+static inline double distance_to_rtt(double distance)
+{
+	const long light_speed = 299792458L;
+	return distance / light_speed;
+}
+
+static inline double sec_to_ps(double sec)
+{
+	return sec * 1000 * 1000 * 1000;
+}
+
+static inline double meter_to_mm(double meter)
+{
+	return meter * 1000;
 }
 
 static inline int pkt_duration(int len, int rate)
@@ -158,7 +192,6 @@ static inline bool frame_is_probe_req(struct frame *frame)
 	return (hdr->frame_control[0] & (FCTL_FTYPE | STYPE_PROBE_REQ)) ==
 		(FTYPE_MGMT | STYPE_PROBE_REQ);
 }
-
 
 static inline bool frame_has_zero_rates(const struct frame *frame)
 {
@@ -901,6 +934,222 @@ int nl_err_cb(struct sockaddr_nl *nla, struct nlmsgerr *nlerr, void *arg)
 	return NL_SKIP;
 }
 
+static int send_pmsr_result_ftm(struct nl_msg *msg,
+				struct pmsr_request_ftm *req,
+				struct wmediumd *ctx,
+				struct station *sender,
+				struct station *receiver)
+{
+	struct nlattr *ftm;
+	int err;
+
+	ftm = nla_nest_start(msg, NL80211_PMSR_TYPE_FTM);
+	if (!ftm)
+		return -ENOMEM;
+
+	if (!receiver) {
+		err = nla_put_u32(msg, NL80211_PMSR_FTM_RESP_ATTR_FAIL_REASON,
+				  NL80211_PMSR_FTM_FAILURE_NO_RESPONSE);
+		goto out;
+	}
+
+	double distance =
+		sqrt(pow(sender->x - receiver->x, 2) + pow(sender->y - receiver->y, 2));
+	double distance_in_mm = meter_to_mm(distance);
+	double rtt_in_ps = sec_to_ps(distance_to_rtt(distance));
+	if (distance_in_mm > UINT64_MAX || rtt_in_ps > UINT64_MAX) {
+		w_logf(ctx, LOG_WARNING,
+		       "%s: Devices are too far away", __func__);
+		return nla_put_u32(msg, NL80211_PMSR_FTM_RESP_ATTR_FAIL_REASON,
+				   NL80211_PMSR_FTM_FAILURE_NO_RESPONSE);
+	}
+
+	int rssi = receiver->tx_power -
+		   ctx->calc_path_loss(NULL, sender, receiver);
+
+	if (nla_put_u32(msg, NL80211_PMSR_FTM_RESP_ATTR_NUM_FTMR_ATTEMPTS,
+			req->ftmr_retries) ||
+		nla_put_u32(msg, NL80211_PMSR_FTM_RESP_ATTR_NUM_FTMR_SUCCESSES,
+			req->ftmr_retries) ||
+		nla_put_u8(msg, NL80211_PMSR_FTM_RESP_ATTR_NUM_BURSTS_EXP,
+			req->num_bursts_exp) ||
+		nla_put_u8(msg, NL80211_PMSR_FTM_RESP_ATTR_BURST_DURATION,
+			 req->burst_duration) ||
+		nla_put_u8(msg, NL80211_PMSR_FTM_RESP_ATTR_FTMS_PER_BURST,
+			 req->ftms_per_burst) ||
+		nla_put_s32(msg, NL80211_PMSR_FTM_RESP_ATTR_RSSI_AVG, rssi) ||
+		nla_put_s32(msg, NL80211_PMSR_FTM_RESP_ATTR_RSSI_SPREAD, 0) ||
+		nla_put_u64(msg, NL80211_PMSR_FTM_RESP_ATTR_RTT_AVG,
+			  (uint64_t)rtt_in_ps) ||
+		nla_put_u64(msg, NL80211_PMSR_FTM_RESP_ATTR_RTT_VARIANCE, 0) ||
+		nla_put_u64(msg, NL80211_PMSR_FTM_RESP_ATTR_RTT_SPREAD, 0) ||
+		nla_put_u64(msg, NL80211_PMSR_FTM_RESP_ATTR_DIST_AVG,
+			 (uint64_t)distance_in_mm) ||
+		nla_put_u64(msg, NL80211_PMSR_FTM_RESP_ATTR_DIST_VARIANCE, 0) ||
+		nla_put_u64(msg, NL80211_PMSR_FTM_RESP_ATTR_DIST_SPREAD, 0)) {
+		w_logf(ctx, LOG_ERR, "%s: Failed to fill a payload\n", __func__);
+		return -ENOMEM;
+	}
+
+out:
+	if (ftm)
+		nla_nest_end(msg, ftm);
+
+	return 0;
+}
+
+static int send_pmsr_result_peer(struct nl_msg *msg,
+				 struct pmsr_request_peer *req,
+				 struct wmediumd *ctx,
+				 struct station *sender)
+{
+	struct nlattr *peer, *resp, *data;
+	struct station *receiver;
+	int status;
+	struct timespec ts;
+	u64 host_time_ns;
+	u64 ap_tsf_us;
+	int err;
+
+	peer = nla_nest_start(msg, 1);
+	if (!peer)
+		return -ENOMEM;
+
+	receiver = get_station_by_addr(ctx, req->addr);
+	if (receiver)
+		status = NL80211_PMSR_STATUS_SUCCESS;
+	else {
+		w_logf(ctx, LOG_WARNING, "%s: unknown pmsr target " MAC_FMT "\n",
+		       __func__, MAC_ARGS(req->addr));
+		status = NL80211_PMSR_STATUS_FAILURE;
+	}
+
+	if (clock_gettime(CLOCK_BOOTTIME, &ts)) {
+		w_logf(ctx, LOG_ERR, "%s: clock_gettime() failed\n", __func__);
+		return -EINVAL;
+	}
+
+	host_time_ns = ts_to_ns(ts);
+	ap_tsf_us = ns_to_us(ts_to_ns(ts));
+
+	err = nla_put(msg, NL80211_PMSR_PEER_ATTR_ADDR, ETH_ALEN, req->addr);
+	if (err)
+		return err;
+
+	resp = nla_nest_start(msg, NL80211_PMSR_PEER_ATTR_RESP);
+	if (!resp)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_PMSR_RESP_ATTR_STATUS, status) ||
+		nla_put_u64(msg, NL80211_PMSR_RESP_ATTR_HOST_TIME, host_time_ns) ||
+		nla_put_u64(msg, NL80211_PMSR_RESP_ATTR_AP_TSF, ap_tsf_us) ||
+		nla_put_flag(msg, NL80211_PMSR_RESP_ATTR_FINAL)) {
+		w_logf(ctx, LOG_ERR, "%s: Failed to fill a payload\n", __func__);
+		return -ENOMEM;
+	}
+
+	data = nla_nest_start(msg, NL80211_PMSR_RESP_ATTR_DATA);
+	if (!data)
+		return -ENOMEM;
+
+	err = send_pmsr_result_ftm(msg, &req->ftm, ctx, sender, receiver);
+
+	nla_nest_end(msg, data);
+	nla_nest_end(msg, resp);
+	nla_nest_end(msg, peer);
+
+	return err;
+}
+
+static void send_pmsr_result(struct pmsr_request* request, struct wmediumd *ctx,
+			     struct station *sender, struct client *client)
+{
+	struct nl_msg *msg;
+	struct nlattr *pmsr, *peers;
+	struct pmsr_request_peer *peer;
+	int cnt;
+	int err;
+
+	msg = nlmsg_alloc();
+	if (!msg) {
+		w_logf(ctx, LOG_ERR, "%s: nlmsg_alloc failed\n", __func__);
+		return;
+	}
+
+	if (!genlmsg_put(msg, NL_AUTO_PID, NL_AUTO_SEQ, ctx->family_id,
+			 0, NLM_F_REQUEST, HWSIM_CMD_REPORT_PMSR, VERSION_NR)) {
+		w_logf(ctx, LOG_ERR, "%s: genlmsg_put failed\n", __func__);
+		goto out;
+	}
+
+	err = nla_put(msg, HWSIM_ATTR_ADDR_TRANSMITTER,
+		      ETH_ALEN, sender->hwaddr);
+
+	pmsr = nla_nest_start(msg, HWSIM_ATTR_PMSR_RESULT);
+	if (!pmsr)
+		goto out;
+
+	peers = nla_nest_start(msg, NL80211_PMSR_ATTR_PEERS);
+	if (!peers)
+		goto out;
+
+	list_for_each_entry(peer, &request->peers, list) {
+		err = send_pmsr_result_peer(msg, peer, ctx, sender);
+		if (err) {
+			w_logf(ctx, LOG_ERR,
+			       "%s: Failed to send pmsr result from " MAC_FMT \
+			       " to " MAC_FMT ". Stopping\n", __func__,
+			       MAC_ARGS(sender->addr),
+			       MAC_ARGS(peer->addr));
+			break;
+		}
+	}
+
+	nla_nest_end(msg, peers);
+	nla_nest_end(msg, pmsr);
+
+	wmediumd_send_to_client(ctx, client, msg);
+
+out:
+	nlmsg_free(msg);
+}
+
+static void process_start_pmsr(struct nlattr *attrs[], struct wmediumd *ctx,
+			       struct client *client)
+{
+	u8 *hwaddr;
+	struct station *sender;
+
+	struct pmsr_request request;
+	struct pmsr_request_peer *peer, *tmp;
+	int err;
+
+	if (!attrs[HWSIM_ATTR_ADDR_TRANSMITTER]) {
+		w_logf(ctx, LOG_ERR, "%s: Missing sender information\n",
+		       __func__);
+	}
+
+	hwaddr = (u8 *)nla_data(attrs[HWSIM_ATTR_ADDR_TRANSMITTER]);
+	sender = get_station_by_addr(ctx, hwaddr);
+	if (!sender) {
+		w_logf(ctx, LOG_ERR, "%s: Unknown sender " MAC_FMT "\n",
+		       __func__, MAC_ARGS(hwaddr));
+		return;
+	}
+
+	err = parse_pmsr_request(attrs[HWSIM_ATTR_PMSR_REQUEST], &request);
+	if (err)
+		goto out;
+
+	send_pmsr_result(&request, ctx, sender, client);
+
+out:
+	list_for_each_entry_safe(peer, tmp, &request.peers, list) {
+		list_del(&peer->list);
+		free(peer);
+	}
+}
+
 /*
  * Handle events from the kernel.  Process CMD_FRAME events and queue them
  * for later delivery with the scheduler.
@@ -1027,6 +1276,13 @@ static void _process_messages(struct nl_msg *msg,
 			}
 			break;
 		}
+		break;
+	case HWSIM_CMD_START_PMSR:
+		process_start_pmsr(attrs, ctx, client);
+		break;
+
+	case HWSIM_CMD_ABORT_PMSR:
+		// Do nothing. Too late to abort any PMSR.
 		break;
 	}
 }
