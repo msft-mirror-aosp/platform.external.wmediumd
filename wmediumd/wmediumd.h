@@ -39,9 +39,6 @@ enum {
 	HWSIM_CMD_GET_RADIO,
 	HWSIM_CMD_ADD_MAC_ADDR,
 	HWSIM_CMD_DEL_MAC_ADDR,
-	HWSIM_CMD_START_PMSR,
-	HWSIM_CMD_ABORT_PMSR,
-	HWSIM_CMD_REPORT_PMSR,
 	__HWSIM_CMD_MAX,
 };
 #define HWSIM_CMD_MAX (_HWSIM_CMD_MAX - 1)
@@ -81,16 +78,6 @@ enum {
  * @HWSIM_ATTR_RADIO_NAME: Name of radio, e.g. phy666
  * @HWSIM_ATTR_NO_VIF:  Do not create vif (wlanX) when creating radio.
  * @HWSIM_ATTR_FREQ: Frequency at which packet is transmitted or received.
- * @HWSIM_ATTR_TX_INFO_FLAGS: additional flags for corresponding
- *	rates of %HWSIM_ATTR_TX_INFO
- * @HWSIM_ATTR_PERM_ADDR: permanent mac address of new radio
- * @HWSIM_ATTR_IFTYPE_SUPPORT: u32 attribute of supported interface types bits
- * @HWSIM_ATTR_CIPHER_SUPPORT: u32 array of supported cipher types
- * @HWSIM_ATTR_MLO_SUPPORT: claim MLO support (exact parameters TBD) for
- *	the new radio
- * @HWSIM_ATTR_PMSR_SUPPORT: claim peer measurement support
- * @HWSIM_ATTR_PMSR_REQUEST: peer measurement request
- * @HWSIM_ATTR_PMSR_RESULT: peer measurement result
  * @__HWSIM_ATTR_MAX: enum limit
  */
 
@@ -117,14 +104,6 @@ enum {
 	HWSIM_ATTR_NO_VIF,
 	HWSIM_ATTR_FREQ,
 	HWSIM_ATTR_PAD,
-	HWSIM_ATTR_TX_INFO_FLAGS,
-	HWSIM_ATTR_PERM_ADDR,
-	HWSIM_ATTR_IFTYPE_SUPPORT,
-	HWSIM_ATTR_CIPHER_SUPPORT,
-	HWSIM_ATTR_MLO_SUPPORT,
-	HWSIM_ATTR_PMSR_SUPPORT,
-	HWSIM_ATTR_PMSR_REQUEST,
-	HWSIM_ATTR_PMSR_RESULT,
 	__HWSIM_ATTR_MAX,
 };
 #define HWSIM_ATTR_MAX (__HWSIM_ATTR_MAX - 1)
