@@ -12,11 +12,16 @@
 #define MAC_ADDR_LEN 6
 #define STR_MAC_ADDR_LEN 17
 
-#define OPENWRT_MAC_ADDR "42:00:00:00:00:00"
+#define OPENWRT_MAC_ADDR_1 "42:00:00:00:00:00"
+#define OPENWRT_MAC_ADDR_2 "42:00:00:00:01:00"
 
 #define TX_POWER_DEFAULT 10
 
 #define APPEND_LAST -1
+
+#define DEFAULT_RADIO_COUNT 2
+#define DEFAULT_CUTTLEFISH_INSTANCE_COUNT 64
+#define DEFAULT_MAC_PREFIX 5554
 
 #define PREVENT_MULTIPLE_OPTION(var, zero_val)                             \
   do {                                                                     \
@@ -190,7 +195,8 @@ int main(int argc, char **argv) {
       config_setting_add(ifaces, "count", CONFIG_TYPE_INT);
   config_setting_t *ids = config_setting_add(ifaces, "ids", CONFIG_TYPE_ARRAY);
 
-  config_setting_set_string_elem(ids, APPEND_LAST, OPENWRT_MAC_ADDR);
+  config_setting_set_string_elem(ids, APPEND_LAST, OPENWRT_MAC_ADDR_1);
+  config_setting_set_string_elem(ids, APPEND_LAST, OPENWRT_MAC_ADDR_2);
 
   FILE *output = stdout;
   char *out_path = NULL;
@@ -256,18 +262,18 @@ int main(int argc, char **argv) {
     }
   }
 
-  /* Use default radio count if not specified */
+  /* Use default values if not specified */
 
   if (radio_count == -1) {
-    radio_count = 2;
+    radio_count = DEFAULT_RADIO_COUNT;
   }
 
   if (cuttlefish_instance_count == -1) {
-    cuttlefish_instance_count = 16;
+    cuttlefish_instance_count = DEFAULT_CUTTLEFISH_INSTANCE_COUNT;
   }
 
   if (mac_prefix == -1) {
-    mac_prefix = 5554;
+    mac_prefix = DEFAULT_MAC_PREFIX;
   }
 
   if (add_cuttlefish_mac_addresses(ids, mac_prefix, cuttlefish_instance_count,

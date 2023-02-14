@@ -703,6 +703,9 @@ int clear_config(struct wmediumd *ctx) {
 					    struct station, list);
 
 		list_del(&station->list);
+
+		free(station->lci);
+		free(station->civicloc);
 		free(station);
 	}
 
