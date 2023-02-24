@@ -991,6 +991,16 @@ static int send_pmsr_result_ftm(struct nl_msg *msg,
 		return -ENOMEM;
 	}
 
+	if (req->request_lci && receiver->lci) {
+		nla_put_string(msg, NL80211_PMSR_FTM_RESP_ATTR_LCI,
+			       receiver->lci);
+	}
+
+	if (req->request_civicloc && receiver->civicloc) {
+		nla_put_string(msg, NL80211_PMSR_FTM_RESP_ATTR_CIVICLOC,
+			       receiver->civicloc);
+	}
+
 out:
 	if (ftm)
 		nla_nest_end(msg, ftm);
