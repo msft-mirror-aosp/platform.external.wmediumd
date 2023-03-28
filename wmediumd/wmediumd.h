@@ -306,4 +306,14 @@ int w_flogf(struct wmediumd *ctx, u8 level, FILE *stream, const char *format, ..
 int index_to_rate(size_t index, u32 freq);
 int get_max_index(void);
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int wmediumd_main(int argc, char *argv[]);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* WMEDIUMD_H_ */
