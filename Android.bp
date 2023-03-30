@@ -6,7 +6,6 @@ license {
     name: "external_wmediumd_license",
     visibility: [":__subpackages__"],
     license_kinds: [
-        "SPDX-license-identifier-Apache-2.0",
         "SPDX-license-identifier-GPL-2.0",
     ],
     license_text: [
@@ -32,7 +31,6 @@ cc_binary_host {
 cc_binary_host {
     name: "wmediumd",
     srcs: [
-        "main.cc",
         "wmediumd/*.c",
         "wmediumd/lib/*.c",
     ],
