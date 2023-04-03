@@ -65,6 +65,7 @@ struct pmsr_request_peer {
 struct pmsr_request {
 	uint32_t timeout;
 
+	// Only for mac randomization
 	uint8_t mac_addr[ETH_ALEN];
 	uint8_t mac_addr_mask[ETH_ALEN];
 
