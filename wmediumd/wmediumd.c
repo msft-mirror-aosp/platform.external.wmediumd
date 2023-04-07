@@ -834,7 +834,7 @@ static void wmediumd_deliver_frame(struct usfstl_job *job)
 			if (memcmp(src, station->addr, ETH_ALEN) == 0)
 				continue;
 
-			if (is_multicast_ether_addr(dest)) {
+			if (is_multicast_ether_addr(dest) && station->client != NULL) {
 				int snr, rate_idx, signal;
 				double error_prob;
 
