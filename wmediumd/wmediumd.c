@@ -991,6 +991,16 @@ static int send_pmsr_result_ftm(struct nl_msg *msg,
 		return -ENOMEM;
 	}
 
+	if (req->request_lci && receiver->lci) {
+		nla_put_string(msg, NL80211_PMSR_FTM_RESP_ATTR_LCI,
+			       receiver->lci);
+	}
+
+	if (req->request_civicloc && receiver->civicloc) {
+		nla_put_string(msg, NL80211_PMSR_FTM_RESP_ATTR_CIVICLOC,
+			       receiver->civicloc);
+	}
+
 out:
 	if (ftm)
 		nla_nest_end(msg, ftm);
@@ -1861,7 +1871,7 @@ static void init_pcapng(struct wmediumd *ctx, const char *filename)
 #define VIRTIO_F_VERSION_1 32
 #endif
 
-int main(int argc, char *argv[])
+int wmediumd_main(int argc, char *argv[])
 {
 	int opt;
 	struct wmediumd ctx = {};
