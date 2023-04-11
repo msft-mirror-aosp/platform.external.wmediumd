@@ -1871,7 +1871,7 @@ static void init_pcapng(struct wmediumd *ctx, const char *filename)
 #define VIRTIO_F_VERSION_1 32
 #endif
 
-int main(int argc, char *argv[])
+int wmediumd_main(int argc, char *argv[])
 {
 	int opt;
 	struct wmediumd ctx = {};
