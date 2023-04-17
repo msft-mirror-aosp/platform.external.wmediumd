@@ -20,7 +20,7 @@ import "google/protobuf/empty.proto";
 
 service WmediumdService {
   // TODO(273384914): Define a response type.
-  rpc SetPosition (SetPositionRequest) returns (google.protobuf.Empty) {}
+  rpc SetPosition(SetPositionRequest) returns (google.protobuf.Empty) {}
 }
 
 message SetPositionRequest {
