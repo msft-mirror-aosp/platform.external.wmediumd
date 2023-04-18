@@ -25,7 +25,7 @@ cc_binary_host {
         "libconfig",
     ],
     visibility: [
-       "//device/google/cuttlefish/build",
+        "//device/google/cuttlefish/build",
     ],
 }
 
@@ -126,7 +126,7 @@ cc_binary_host {
     ],
     cpp_std: "c++17",
     visibility: [
-       "//device/google/cuttlefish/build",
+        "//device/google/cuttlefish/build",
     ],
 }
 
@@ -139,7 +139,7 @@ cc_binary_host {
         "wmediumd/inc",
     ],
     visibility: [
-       "//device/google/cuttlefish/build",
+        "//device/google/cuttlefish/build",
     ],
     stl: "none",
     static_executable: true,
