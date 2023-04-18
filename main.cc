@@ -16,10 +16,40 @@
  *
  */
 
+#include <string>
+#include <thread>
+#include <vector>
+
+#include <android-base/logging.h>
+#include <android-base/strings.h>
+
 #include <wmediumd/wmediumd.h>
+#include <wmediumd_server/wmediumd_server.h>
+
+constexpr char kGrpcUdsPathOption[] = "--grpc_uds_path=";
 
 int main(int argc, char* argv[]) {
-    wmediumd_main(argc, argv);
+    std::vector<char*> wmediumd_args;
+    std::string grpc_uds_path;
+    for (int i = 0; i < argc; i++) {
+        if (android::base::StartsWith(argv[i], kGrpcUdsPathOption)) {
+            std::string current_arg(argv[i]);
+            grpc_uds_path = current_arg.substr(strlen(kGrpcUdsPathOption));
+        } else {
+            wmediumd_args.push_back(argv[i]);
+        }
+    }
+
+    std::thread wmediumd_server_thread;
+    if (!grpc_uds_path.empty()) {
+        wmediumd_server_thread = std::thread(RunWmediumdServer, grpc_uds_path);
+    }
+
+    wmediumd_main(wmediumd_args.size(), wmediumd_args.data());
+
+    if (!grpc_uds_path.empty()) {
+        wmediumd_server_thread.join();
+    }
 
     return 0;
 }
