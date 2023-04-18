@@ -16,23 +16,23 @@
  *
  */
 
-#include <algorithm>
-#include <array>
-#include <iostream>
-#include <memory>
-#include <string>
-#include <unistd.h>
-
 #include <android-base/strings.h>
 #include <gflags/gflags.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <sys/msg.h>
+#include <unistd.h>
 
+#include <algorithm>
+#include <array>
+#include <iostream>
+#include <memory>
+#include <string>
+
+#include "wmediumd.grpc.pb.h"
 #include "wmediumd/api.h"
 #include "wmediumd/grpc.h"
-#include "wmediumd.grpc.pb.h"
 
 using google::protobuf::Empty;
 using grpc::Server;
@@ -89,38 +89,40 @@ static std::array<uint8_t, 6> ParseMacAddress(const std::string& mac_address) {
 }
 
 class WmediumdServiceImpl final : public WmediumdService::Service {
-  public:
-    WmediumdServiceImpl(int event_fd, int msq_id) : event_fd_(event_fd), msq_id_(msq_id) {}
+ public:
+  WmediumdServiceImpl(int event_fd, int msq_id)
+      : event_fd_(event_fd), msq_id_(msq_id) {}
 
-    Status SetPosition(ServerContext* context, const SetPositionRequest* request,
-                Empty* reply) override {
-      // Validate parameters
-      if (!IsValidMacAddr(request->mac_address())) {
-        return Status(StatusCode::INVALID_ARGUMENT, "Got invalid mac address");
-      }
-      auto mac = ParseMacAddress(request->mac_address());
-
-      // Construct request data
-      struct wmediumd_set_position data;
-      memcpy(data.mac, &mac, sizeof(mac));
-      data.x = request->x_pos();
-      data.y = request->y_pos();
-
-      // Fill data in the message queue
-      struct wmediumd_grpc_message msg;
-      msg.type = GRPC_REQUEST;
-      memcpy(msg.data, &data, sizeof(data));
-      msgsnd(msq_id_, &msg, sizeof(data), 0);
-
-      // Throw an event to wmediumd
-      uint64_t value = REQUEST_SET_POSITION;
-      write(event_fd_, &value, sizeof(uint64_t));
-
-      return Status::OK;
+  Status SetPosition(ServerContext* context, const SetPositionRequest* request,
+                     Empty* reply) override {
+    // Validate parameters
+    if (!IsValidMacAddr(request->mac_address())) {
+      return Status(StatusCode::INVALID_ARGUMENT, "Got invalid mac address");
     }
-  private:
-    int event_fd_;
-    int msq_id_;
+    auto mac = ParseMacAddress(request->mac_address());
+
+    // Construct request data
+    struct wmediumd_set_position data;
+    memcpy(data.mac, &mac, sizeof(mac));
+    data.x = request->x_pos();
+    data.y = request->y_pos();
+
+    // Fill data in the message queue
+    struct wmediumd_grpc_message msg;
+    msg.type = GRPC_REQUEST;
+    memcpy(msg.data, &data, sizeof(data));
+    msgsnd(msq_id_, &msg, sizeof(data), 0);
+
+    // Throw an event to wmediumd
+    uint64_t value = REQUEST_SET_POSITION;
+    write(event_fd_, &value, sizeof(uint64_t));
+
+    return Status::OK;
+  }
+
+ private:
+  int event_fd_;
+  int msq_id_;
 };
 
 void RunWmediumdServer(std::string grpc_uds_path, int event_fd, int msq_id) {
