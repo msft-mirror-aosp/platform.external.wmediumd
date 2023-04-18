@@ -214,9 +214,10 @@ struct client {
 
 struct wmediumd {
 	int timerfd;
+	int msq_id;
 
 	struct nl_sock *sock;
-	struct usfstl_loop_entry nl_loop;
+	struct usfstl_loop_entry nl_loop, grpc_loop;
 
 	struct usfstl_sched_ctrl *ctrl;
 
@@ -310,7 +311,7 @@ int get_max_index(void);
 extern "C" {
 #endif
 
-int wmediumd_main(int argc, char *argv[]);
+int wmediumd_main(int argc, char *argv[], int event_fd, int msq_id);
 
 #ifdef __cplusplus
 }

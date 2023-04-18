@@ -22,6 +22,8 @@
 
 #include <android-base/logging.h>
 #include <android-base/strings.h>
+#include <sys/eventfd.h>
+#include <sys/msg.h>
 
 #include <wmediumd/wmediumd.h>
 #include <wmediumd_server/wmediumd_server.h>
@@ -40,16 +42,21 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    int fd = eventfd(0, 0);
+    int msq_id = msgget(IPC_PRIVATE, IPC_CREAT | 0666);
+
     std::thread wmediumd_server_thread;
     if (!grpc_uds_path.empty()) {
-        wmediumd_server_thread = std::thread(RunWmediumdServer, grpc_uds_path);
+        wmediumd_server_thread = std::thread(RunWmediumdServer, grpc_uds_path, fd, msq_id);
     }
 
-    wmediumd_main(wmediumd_args.size(), wmediumd_args.data());
+    wmediumd_main(wmediumd_args.size(), wmediumd_args.data(), fd, msq_id);
 
     if (!grpc_uds_path.empty()) {
         wmediumd_server_thread.join();
     }
 
+    msgctl(msq_id, IPC_RMID, 0);
+    close(fd);
     return 0;
 }

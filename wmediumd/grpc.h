@@ -16,4 +16,27 @@
  *
  */
 
-void RunWmediumdServer(std::string grpc_uds_path, int event_fd, int msq_id);
+
+#define GRPC_MSG_BUF_MAX 1024
+
+// Do not use_zero, the type of the message queue should be positive value.
+enum wmediumd_grpc_type {
+    GRPC_REQUEST = 1,
+    GRPC_RESPONSE,
+};
+
+// Do not use zero, writing zero to eventfd doesn't throw an event.
+enum wmediumd_grpc_request_type {
+    REQUEST_SET_POSITION = 1,
+};
+
+// Do not use zero, writing zero to eventfd doesn't throw an event.
+enum wmediumd_grpc_response_type {
+    RESPONSE_INVALID = 1,
+    RESPONSE_ACK,
+};
+
+struct wmediumd_grpc_message {
+    long type;
+    char data[GRPC_MSG_BUF_MAX];
+};

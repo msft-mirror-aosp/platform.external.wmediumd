@@ -16,14 +16,15 @@ syntax = "proto3";
 
 package wmediumdserver;
 
+import "google/protobuf/empty.proto";
+
 service WmediumdService {
-  rpc Wmediumd (WmediumdRequest) returns (WmediumdReply) {}
+  // TODO(273384914): Define a response type.
+  rpc SetPosition (SetPositionRequest) returns (google.protobuf.Empty) {}
 }
 
-message WmediumdRequest {
-  string message = 1;
-}
-
-message WmediumdReply {
-  string message = 1;
+message SetPositionRequest {
+  string mac_address = 1;
+  double x_pos = 2;
+  double y_pos = 3;
 }
