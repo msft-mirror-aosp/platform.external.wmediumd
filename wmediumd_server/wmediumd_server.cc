@@ -42,6 +42,7 @@ using grpc::ServerContext;
 using grpc::Status;
 using grpc::StatusCode;
 using wmediumdserver::SetPositionRequest;
+using wmediumdserver::SetSnrRequest;
 using wmediumdserver::WmediumdService;
 
 #define MAC_ADDR_LEN 6
@@ -124,6 +125,40 @@ class WmediumdServiceImpl final : public WmediumdService::Service {
     if (response_message.data_type != RESPONSE_ACK) {
       return Status(StatusCode::FAILED_PRECONDITION,
                     "Failed to execute SetPosition");
+    }
+    return Status::OK;
+  }
+
+  Status SetSnr(ServerContext* context, const SetSnrRequest* request,
+                Empty* reply) override {
+    // Validate parameters
+    if (!IsValidMacAddr(request->mac_address_1()) ||
+        !IsValidMacAddr(request->mac_address_2())) {
+      return Status(StatusCode::INVALID_ARGUMENT, "Got invalid mac address");
+    }
+    auto mac_1 = ParseMacAddress(request->mac_address_1());
+    auto mac_2 = ParseMacAddress(request->mac_address_2());
+
+    // Construct request payload
+    struct wmediumd_set_snr request_data_payload;
+    memcpy(request_data_payload.node1_mac, &mac_1, sizeof(mac_1));
+    memcpy(request_data_payload.node2_mac, &mac_2, sizeof(mac_2));
+    request_data_payload.snr = request->snr();
+
+    // Send request message and trigger event
+    long msg_type_response = msg_type_response_increment.fetch_add(1);
+    ssize_t size = sizeof(request_data_payload);
+    SendRequestMessage(msg_type_response, REQUEST_SET_SNR, size,
+                       &request_data_payload);
+    TriggerEvent();
+
+    // Receive response message
+    struct wmediumd_grpc_response_message response_message;
+    msgrcv(msq_id_, &response_message, MSG_TYPE_RESPONSE_SIZE,
+           msg_type_response, 0);
+    if (response_message.data_type != RESPONSE_ACK) {
+      return Status(StatusCode::FAILED_PRECONDITION,
+                    "Failed to execute SetSnr");
     }
     return Status::OK;
   }
