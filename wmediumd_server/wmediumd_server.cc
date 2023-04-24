@@ -17,6 +17,7 @@
  */
 
 #include <android-base/strings.h>
+#include <assert.h>
 #include <gflags/gflags.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
@@ -45,6 +46,8 @@ using wmediumdserver::WmediumdService;
 
 #define MAC_ADDR_LEN 6
 #define STR_MAC_ADDR_LEN 17
+
+static std::atomic<long> msg_type_response_increment{MSG_TYPE_RESPONSE_BASE};
 
 template <class T>
 static void AppendBinaryRepresentation(std::string& buf, const T& data) {
@@ -101,26 +104,49 @@ class WmediumdServiceImpl final : public WmediumdService::Service {
     }
     auto mac = ParseMacAddress(request->mac_address());
 
-    // Construct request data
-    struct wmediumd_set_position data;
-    memcpy(data.mac, &mac, sizeof(mac));
-    data.x = request->x_pos();
-    data.y = request->y_pos();
+    // Construct request payload
+    struct wmediumd_set_position request_data_payload;
+    memcpy(request_data_payload.mac, &mac, sizeof(mac));
+    request_data_payload.x = request->x_pos();
+    request_data_payload.y = request->y_pos();
 
-    // Fill data in the message queue
-    struct wmediumd_grpc_message msg;
-    msg.type = GRPC_REQUEST;
-    memcpy(msg.data, &data, sizeof(data));
-    msgsnd(msq_id_, &msg, sizeof(data), 0);
+    // Send request message and trigger event
+    long msg_type_response = msg_type_response_increment.fetch_add(1);
+    ssize_t size = sizeof(request_data_payload);
+    SendRequestMessage(msg_type_response, REQUEST_SET_POSITION, size,
+                       &request_data_payload);
+    TriggerEvent();
 
-    // Throw an event to wmediumd
-    uint64_t value = REQUEST_SET_POSITION;
-    write(event_fd_, &value, sizeof(uint64_t));
-
+    // Receive response message
+    struct wmediumd_grpc_response_message response_message;
+    msgrcv(msq_id_, &response_message, MSG_TYPE_RESPONSE_SIZE,
+           msg_type_response, 0);
+    if (response_message.data_type != RESPONSE_ACK) {
+      return Status(StatusCode::FAILED_PRECONDITION,
+                    "Failed to execute SetPosition");
+    }
     return Status::OK;
   }
 
  private:
+  void SendRequestMessage(long msg_type_response,
+                          enum wmediumd_grpc_request_data_type data_type,
+                          ssize_t data_size, void* data_payload) {
+    struct wmediumd_grpc_request_message request_message;
+    request_message.msg_type_request = MSG_TYPE_REQUEST;
+    request_message.msg_type_response = msg_type_response;
+    request_message.data_type = data_type;
+    request_message.data_size = data_size;
+    assert(data_size <= GRPC_MSG_BUF_MAX);
+    memcpy(request_message.data_payload, data_payload, data_size);
+    msgsnd(msq_id_, &request_message, MSG_TYPE_REQUEST_SIZE, 0);
+  }
+
+  void TriggerEvent() {
+    uint64_t evt = 1;
+    write(event_fd_, &evt, sizeof(evt));
+  }
+
   int event_fd_;
   int msq_id_;
 };
