@@ -1520,37 +1520,44 @@ static void close_pcapng(struct wmediumd *ctx) {
 
 static void init_pcapng(struct wmediumd *ctx, const char *filename);
 
+static void wmediumd_send_grpc_response(int msq_id, long msg_type_response, enum wmediumd_grpc_response_data_type data_type) {
+	struct wmediumd_grpc_response_message response_message;
+	response_message.msg_type_response = msg_type_response;
+	response_message.data_type = data_type;
+	response_message.data_size = 0;
+	// TODO(273384914): Send data payload for list_stations response type.
+	msgsnd(msq_id, &response_message, MSG_TYPE_RESPONSE_SIZE, 0);
+}
+
 static void wmediumd_grpc_service_handler(struct usfstl_loop_entry *entry) {
 	struct wmediumd *ctx = entry->data;
+	ssize_t msg_len;
 
-	// Receive request type from WmediumdService
-	uint64_t request_type;
-	read(entry->fd, &request_type, sizeof(uint64_t));
+	// Receive event from wmediumd_server
+	uint64_t evt;
+	read(entry->fd, &evt, sizeof(evt));
 
-	struct wmediumd_grpc_message request_body;
-	uint64_t response_type;
-
-	// Receive request body from WmediumdService and do the task.
-	// TODO(273384914): Support more request types.
-	switch (request_type) {
-	case REQUEST_SET_POSITION:
-		if (msgrcv(ctx->msq_id, &request_body, sizeof(struct wmediumd_set_position), GRPC_REQUEST, 0) != sizeof(struct wmediumd_set_position)) {
-			w_logf(ctx, LOG_ERR, "%s: failed to get set_position request body\n", __func__);
+	struct wmediumd_grpc_request_message request_message;
+	msg_len = msgrcv(ctx->msq_id, &request_message, MSG_TYPE_REQUEST_SIZE, MSG_TYPE_REQUEST, IPC_NOWAIT);
+	if (msg_len != MSG_TYPE_REQUEST_SIZE) {
+		w_logf(ctx, LOG_ERR, "%s: failed to get request message\n", __func__);
+	} else {
+		// TODO(273384914): Support more request types.
+		switch (request_message.data_type) {
+		case REQUEST_SET_POSITION:
+			if (process_set_position_message(ctx, (struct wmediumd_set_position *)(request_message.data_payload)) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute set_position\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			break;
+		default:
+			w_logf(ctx, LOG_ERR, "%s: unknown request type\n", __func__);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+			break;
 		}
-
-		if (process_set_position_message(ctx, (struct wmediumd_set_position *)(request_body.data)) < 0) {
-			w_logf(ctx, LOG_ERR, "%s: failed to execute set_position\n", __func__);
-			response_type = RESPONSE_INVALID;
-		}
-		response_type = RESPONSE_ACK;
-		break;
-	default:
-		w_logf(ctx, LOG_ERR, "%s: unknown request type\n", __func__);
-		response_type = RESPONSE_INVALID;
-		break;
 	}
-
-	// TODO(273384914): Send response with response_type
 	return;
 }
 
