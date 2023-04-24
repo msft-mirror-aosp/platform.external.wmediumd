@@ -26,6 +26,7 @@
 
 enum wmediumd_grpc_request_data_type {
     REQUEST_SET_POSITION,
+    REQUEST_SET_SNR,
 };
 
 enum wmediumd_grpc_response_data_type {

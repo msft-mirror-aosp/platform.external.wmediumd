@@ -1552,6 +1552,14 @@ static void wmediumd_grpc_service_handler(struct usfstl_loop_entry *entry) {
 			}
 			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
 			break;
+		case REQUEST_SET_SNR:
+			if (process_set_snr_message(ctx, (struct wmediumd_set_snr *)(request_message.data_payload)) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute set_snr\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			break;
 		default:
 			w_logf(ctx, LOG_ERR, "%s: unknown request type\n", __func__);
 			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);

@@ -20,10 +20,17 @@ import "google/protobuf/empty.proto";
 
 service WmediumdService {
   rpc SetPosition(SetPositionRequest) returns (google.protobuf.Empty) {}
+  rpc SetSnr(SetSnrRequest) returns (google.protobuf.Empty) {}
 }
 
 message SetPositionRequest {
   string mac_address = 1;
   double x_pos = 2;
   double y_pos = 3;
+}
+
+message SetSnrRequest {
+  string mac_address_1 = 1;
+  string mac_address_2 = 2;
+  int32 snr = 3;
 }
