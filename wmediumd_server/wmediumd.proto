@@ -21,6 +21,8 @@ import "google/protobuf/empty.proto";
 service WmediumdService {
   rpc SetPosition(SetPositionRequest) returns (google.protobuf.Empty) {}
   rpc SetSnr(SetSnrRequest) returns (google.protobuf.Empty) {}
+  rpc StartPcap(StartPcapRequest) returns (google.protobuf.Empty) {}
+  rpc StopPcap(google.protobuf.Empty) returns (google.protobuf.Empty) {}
 }
 
 message SetPositionRequest {
@@ -33,4 +35,8 @@ message SetSnrRequest {
   string mac_address_1 = 1;
   string mac_address_2 = 2;
   int32 snr = 3;
+}
+
+message StartPcapRequest {
+  string path = 1;
 }
