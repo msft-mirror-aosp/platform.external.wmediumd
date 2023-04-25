@@ -1520,12 +1520,14 @@ static void close_pcapng(struct wmediumd *ctx) {
 
 static void init_pcapng(struct wmediumd *ctx, const char *filename);
 
-static void wmediumd_send_grpc_response(int msq_id, long msg_type_response, enum wmediumd_grpc_response_data_type data_type) {
+static void wmediumd_send_grpc_response(int msq_id, long msg_type_response, enum wmediumd_grpc_response_data_type data_type, ssize_t data_size, unsigned char *data_payload) {
 	struct wmediumd_grpc_response_message response_message;
 	response_message.msg_type_response = msg_type_response;
 	response_message.data_type = data_type;
-	response_message.data_size = 0;
-	// TODO(273384914): Send data payload for list_stations response type.
+	response_message.data_size = data_size;
+	if (data_size > 0) {
+		memcpy(response_message.data_payload, data_payload, data_size);
+	}
 	msgsnd(msq_id, &response_message, MSG_TYPE_RESPONSE_SIZE, 0);
 }
 
@@ -1542,67 +1544,77 @@ static void wmediumd_grpc_service_handler(struct usfstl_loop_entry *entry) {
 	if (msg_len != MSG_TYPE_REQUEST_SIZE) {
 		w_logf(ctx, LOG_ERR, "%s: failed to get request message\n", __func__);
 	} else {
-		// TODO(273384914): Support more request types.
 		switch (request_message.data_type) {
+		case REQUEST_LIST_STATIONS: {
+			ssize_t size = 0;
+			unsigned char *payload = NULL;
+			if (process_get_stations_message(ctx, &size, &payload) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute list_stations\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
+			} else {
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK_LIST_STATIONS, size, payload);
+			}
+			break;
+		}
 		case REQUEST_LOAD_CONFIG:
 			if (process_load_config_message(ctx, (struct wmediumd_load_config *)(request_message.data_payload)) < 0) {
 				w_logf(ctx, LOG_ERR, "%s: failed to execute load_config\n", __func__);
-				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
 				break;
 			}
-			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
 			break;
 		case REQUEST_RELOAD_CONFIG:
 			if (process_reload_current_config_message(ctx) < 0) {
 				w_logf(ctx, LOG_ERR, "%s: failed to execute reload_config\n", __func__);
-				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
 				break;
 			}
-			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
 			break;
 		case REQUEST_SET_CIVICLOC:
 			if (process_set_civicloc_message(ctx, (struct wmediumd_set_civicloc *)(request_message.data_payload), request_message.data_size) < 0) {
 				w_logf(ctx, LOG_ERR, "%s: failed to execute set_civicloc\n", __func__);
-				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
 				break;
 			}
-			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
 			break;
 		case REQUEST_SET_LCI:
 			if (process_set_lci_message(ctx, (struct wmediumd_set_lci *)(request_message.data_payload), request_message.data_size) < 0) {
 				w_logf(ctx, LOG_ERR, "%s: failed to execute set_lci\n", __func__);
-				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
 				break;
 			}
-			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
 			break;
 		case REQUEST_SET_POSITION:
 			if (process_set_position_message(ctx, (struct wmediumd_set_position *)(request_message.data_payload)) < 0) {
 				w_logf(ctx, LOG_ERR, "%s: failed to execute set_position\n", __func__);
-				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
 				break;
 			}
-			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
 			break;
 		case REQUEST_SET_SNR:
 			if (process_set_snr_message(ctx, (struct wmediumd_set_snr *)(request_message.data_payload)) < 0) {
 				w_logf(ctx, LOG_ERR, "%s: failed to execute set_snr\n", __func__);
-				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
 				break;
 			}
-			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
 			break;
 		case REQUEST_START_PCAP:
 			init_pcapng(ctx, ((struct wmediumd_start_pcap *)(request_message.data_payload))->pcap_path);
-			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
 			break;
 		case REQUEST_STOP_PCAP:
 			close_pcapng(ctx);
-			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
 			break;
 		default:
 			w_logf(ctx, LOG_ERR, "%s: unknown request type\n", __func__);
-			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
 			break;
 		}
 	}

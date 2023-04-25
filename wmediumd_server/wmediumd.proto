@@ -19,6 +19,7 @@ package wmediumdserver;
 import "google/protobuf/empty.proto";
 
 service WmediumdService {
+  rpc ListStations(google.protobuf.Empty) returns (ListStationsResponse) {}
   rpc LoadConfig(LoadConfigRequest) returns (google.protobuf.Empty) {}
   rpc ReloadConfig(google.protobuf.Empty) returns (google.protobuf.Empty) {}
   rpc SetCivicloc(SetCiviclocRequest) returns (google.protobuf.Empty) {}
@@ -27,6 +28,20 @@ service WmediumdService {
   rpc SetSnr(SetSnrRequest) returns (google.protobuf.Empty) {}
   rpc StartPcap(StartPcapRequest) returns (google.protobuf.Empty) {}
   rpc StopPcap(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+}
+
+message StationInfo {
+  string mac_address = 1;
+  string mac_hw_address = 2;
+  double x_pos = 3;
+  double y_pos = 4;
+  int32 tx_power = 5;
+  string lci = 6;
+  string civicloc = 7;
+}
+
+message ListStationsResponse {
+  repeated StationInfo stations = 1;
 }
 
 message LoadConfigRequest {
