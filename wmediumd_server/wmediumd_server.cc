@@ -27,6 +27,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -34,6 +36,7 @@
 #include "wmediumd.grpc.pb.h"
 #include "wmediumd/api.h"
 #include "wmediumd/grpc.h"
+#include "wmediumd/wmediumd.h"
 
 using google::protobuf::Empty;
 using grpc::Server;
@@ -41,6 +44,7 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 using grpc::StatusCode;
+using wmediumdserver::ListStationsResponse;
 using wmediumdserver::LoadConfigRequest;
 using wmediumdserver::SetCiviclocRequest;
 using wmediumdserver::SetLciRequest;
@@ -96,10 +100,48 @@ static std::array<uint8_t, 6> ParseMacAddress(const std::string& mac_address) {
   return mac;
 }
 
+std::string MacToString(const char* mac_address) {
+  char ret[STR_MAC_ADDR_LEN + 1];
+  sprintf(ret, MAC_FMT, MAC_ARGS(mac_address));
+  return ret;
+}
+
 class WmediumdServiceImpl final : public WmediumdService::Service {
  public:
   WmediumdServiceImpl(int event_fd, int msq_id)
       : event_fd_(event_fd), msq_id_(msq_id) {}
+
+  Status ListStations(ServerContext* context, const Empty* request,
+                      ListStationsResponse* response) override {
+    struct wmediumd_grpc_response_message response_message;
+    SendAndReceiveGrpcMessage(REQUEST_LIST_STATIONS, &response_message);
+    if (response_message.data_type != RESPONSE_ACK_LIST_STATIONS) {
+      return Status(StatusCode::FAILED_PRECONDITION,
+                    "Failed to execute ListStations");
+    }
+    if (response_message.data_size < sizeof(struct wmediumd_station_infos)) {
+      return Status(StatusCode::FAILED_PRECONDITION,
+                    "Invalid size of wmediumd_station_infos");
+    }
+
+    // Construct response message
+    const auto* response_data_payload =
+        reinterpret_cast<const wmediumd_station_infos*>(
+            &response_message.data_payload);
+    for (uint32_t i = 0; i < response_data_payload->count; ++i) {
+      const auto* station = reinterpret_cast<const wmediumd_station_info*>(
+          &response_data_payload->stations[i]);
+      auto* response_station = response->add_stations();
+      response_station->set_mac_address(MacToString(station->addr));
+      response_station->set_mac_hw_address(MacToString(station->hwaddr));
+      response_station->set_x_pos(station->x);
+      response_station->set_y_pos(station->y);
+      response_station->set_tx_power(station->tx_power);
+      response_station->set_lci((char*)station + station->lci_offset);
+      response_station->set_civicloc((char*)station + station->civicloc_offset);
+    }
+    return Status::OK;
+  }
 
   Status LoadConfig(ServerContext* context, const LoadConfigRequest* request,
                     Empty* reply) override {
