@@ -41,6 +41,7 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 using grpc::StatusCode;
+using wmediumdserver::LoadConfigRequest;
 using wmediumdserver::SetCiviclocRequest;
 using wmediumdserver::SetLciRequest;
 using wmediumdserver::SetPositionRequest;
@@ -99,6 +100,38 @@ class WmediumdServiceImpl final : public WmediumdService::Service {
  public:
   WmediumdServiceImpl(int event_fd, int msq_id)
       : event_fd_(event_fd), msq_id_(msq_id) {}
+
+  Status LoadConfig(ServerContext* context, const LoadConfigRequest* request,
+                    Empty* reply) override {
+    // Construct request payload
+    ssize_t size =
+        sizeof(struct wmediumd_load_config) + (request->path().length() + 1);
+    struct wmediumd_load_config* request_data_payload =
+        (struct wmediumd_load_config*)malloc(size);
+    strcpy(request_data_payload->config_path, request->path().c_str());
+
+    struct wmediumd_grpc_response_message response_message;
+    SendAndReceiveGrpcMessage(REQUEST_LOAD_CONFIG, size, request_data_payload,
+                              &response_message);
+    free(request_data_payload);
+    if (response_message.data_type != RESPONSE_ACK) {
+      return Status(StatusCode::FAILED_PRECONDITION,
+                    "Failed to execute LoadConfig");
+    }
+    return Status::OK;
+  }
+
+  Status ReloadConfig(ServerContext* context, const Empty* request,
+                      Empty* reply) override {
+    struct wmediumd_grpc_response_message response_message;
+    SendAndReceiveGrpcMessage(REQUEST_RELOAD_CONFIG, &response_message);
+    if (response_message.data_type != RESPONSE_ACK) {
+      return Status(StatusCode::FAILED_PRECONDITION,
+                    "Failed to execute ReloadConfig");
+    }
+    return Status::OK;
+  }
+
   Status SetCivicloc(ServerContext* context, const SetCiviclocRequest* request,
                      Empty* reply) override {
     // Validate parameters
