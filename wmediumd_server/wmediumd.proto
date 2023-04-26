@@ -19,10 +19,22 @@ package wmediumdserver;
 import "google/protobuf/empty.proto";
 
 service WmediumdService {
+  rpc SetCivicloc(SetCiviclocRequest) returns (google.protobuf.Empty) {}
+  rpc SetLci(SetLciRequest) returns (google.protobuf.Empty) {}
   rpc SetPosition(SetPositionRequest) returns (google.protobuf.Empty) {}
   rpc SetSnr(SetSnrRequest) returns (google.protobuf.Empty) {}
   rpc StartPcap(StartPcapRequest) returns (google.protobuf.Empty) {}
   rpc StopPcap(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+}
+
+message SetCiviclocRequest {
+  string mac_address = 1;
+  string civicloc = 2;
+}
+
+message SetLciRequest {
+  string mac_address = 1;
+  string lci = 2;
 }
 
 message SetPositionRequest {

@@ -41,6 +41,8 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 using grpc::StatusCode;
+using wmediumdserver::SetCiviclocRequest;
+using wmediumdserver::SetLciRequest;
 using wmediumdserver::SetPositionRequest;
 using wmediumdserver::SetSnrRequest;
 using wmediumdserver::StartPcapRequest;
@@ -97,6 +99,59 @@ class WmediumdServiceImpl final : public WmediumdService::Service {
  public:
   WmediumdServiceImpl(int event_fd, int msq_id)
       : event_fd_(event_fd), msq_id_(msq_id) {}
+  Status SetCivicloc(ServerContext* context, const SetCiviclocRequest* request,
+                     Empty* reply) override {
+    // Validate parameters
+    if (!IsValidMacAddr(request->mac_address())) {
+      return Status(StatusCode::INVALID_ARGUMENT, "Got invalid mac address");
+    }
+    auto mac = ParseMacAddress(request->mac_address());
+
+    // Construct request payload
+    ssize_t size = sizeof(struct wmediumd_set_civicloc) +
+                   (request->civicloc().length() + 1);
+    struct wmediumd_set_civicloc* request_data_payload =
+        (struct wmediumd_set_civicloc*)malloc(size);
+    memcpy(request_data_payload->mac, &mac, sizeof(mac));
+    strcpy(request_data_payload->civicloc, request->civicloc().c_str());
+
+    struct wmediumd_grpc_response_message response_message;
+    SendAndReceiveGrpcMessage(REQUEST_SET_CIVICLOC, size, request_data_payload,
+                              &response_message);
+    free(request_data_payload);
+    if (response_message.data_type != RESPONSE_ACK) {
+      return Status(StatusCode::FAILED_PRECONDITION,
+                    "Failed to execute SetCivicloc");
+    }
+    return Status::OK;
+  }
+
+  Status SetLci(ServerContext* context, const SetLciRequest* request,
+                Empty* reply) override {
+    // Validate parameters
+    if (!IsValidMacAddr(request->mac_address())) {
+      return Status(StatusCode::INVALID_ARGUMENT, "Got invalid mac address");
+    }
+    auto mac = ParseMacAddress(request->mac_address());
+
+    // Construct request payload
+    ssize_t size =
+        sizeof(struct wmediumd_set_lci) + (request->lci().length() + 1);
+    struct wmediumd_set_lci* request_data_payload =
+        (struct wmediumd_set_lci*)malloc(size);
+    memcpy(request_data_payload->mac, &mac, sizeof(mac));
+    strcpy(request_data_payload->lci, request->lci().c_str());
+
+    struct wmediumd_grpc_response_message response_message;
+    SendAndReceiveGrpcMessage(REQUEST_SET_LCI, size, request_data_payload,
+                              &response_message);
+    free(request_data_payload);
+    if (response_message.data_type != RESPONSE_ACK) {
+      return Status(StatusCode::FAILED_PRECONDITION,
+                    "Failed to execute SetLci");
+    }
+    return Status::OK;
+  }
 
   Status SetPosition(ServerContext* context, const SetPositionRequest* request,
                      Empty* reply) override {
