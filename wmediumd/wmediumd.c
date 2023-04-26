@@ -1560,6 +1560,14 @@ static void wmediumd_grpc_service_handler(struct usfstl_loop_entry *entry) {
 			}
 			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
 			break;
+		case REQUEST_START_PCAP:
+			init_pcapng(ctx, ((struct wmediumd_start_pcap *)(request_message.data_payload))->pcap_path);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			break;
+		case REQUEST_STOP_PCAP:
+			close_pcapng(ctx);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			break;
 		default:
 			w_logf(ctx, LOG_ERR, "%s: unknown request type\n", __func__);
 			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);

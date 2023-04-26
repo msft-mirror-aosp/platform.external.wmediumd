@@ -43,6 +43,7 @@ using grpc::Status;
 using grpc::StatusCode;
 using wmediumdserver::SetPositionRequest;
 using wmediumdserver::SetSnrRequest;
+using wmediumdserver::StartPcapRequest;
 using wmediumdserver::WmediumdService;
 
 #define MAC_ADDR_LEN 6
@@ -111,17 +112,10 @@ class WmediumdServiceImpl final : public WmediumdService::Service {
     request_data_payload.x = request->x_pos();
     request_data_payload.y = request->y_pos();
 
-    // Send request message and trigger event
-    long msg_type_response = msg_type_response_increment.fetch_add(1);
-    ssize_t size = sizeof(request_data_payload);
-    SendRequestMessage(msg_type_response, REQUEST_SET_POSITION, size,
-                       &request_data_payload);
-    TriggerEvent();
-
-    // Receive response message
     struct wmediumd_grpc_response_message response_message;
-    msgrcv(msq_id_, &response_message, MSG_TYPE_RESPONSE_SIZE,
-           msg_type_response, 0);
+    SendAndReceiveGrpcMessage(REQUEST_SET_POSITION,
+                              sizeof(request_data_payload),
+                              &request_data_payload, &response_message);
     if (response_message.data_type != RESPONSE_ACK) {
       return Status(StatusCode::FAILED_PRECONDITION,
                     "Failed to execute SetPosition");
@@ -145,17 +139,9 @@ class WmediumdServiceImpl final : public WmediumdService::Service {
     memcpy(request_data_payload.node2_mac, &mac_2, sizeof(mac_2));
     request_data_payload.snr = request->snr();
 
-    // Send request message and trigger event
-    long msg_type_response = msg_type_response_increment.fetch_add(1);
-    ssize_t size = sizeof(request_data_payload);
-    SendRequestMessage(msg_type_response, REQUEST_SET_SNR, size,
-                       &request_data_payload);
-    TriggerEvent();
-
-    // Receive response message
     struct wmediumd_grpc_response_message response_message;
-    msgrcv(msq_id_, &response_message, MSG_TYPE_RESPONSE_SIZE,
-           msg_type_response, 0);
+    SendAndReceiveGrpcMessage(REQUEST_SET_SNR, sizeof(request_data_payload),
+                              &request_data_payload, &response_message);
     if (response_message.data_type != RESPONSE_ACK) {
       return Status(StatusCode::FAILED_PRECONDITION,
                     "Failed to execute SetSnr");
@@ -163,23 +149,68 @@ class WmediumdServiceImpl final : public WmediumdService::Service {
     return Status::OK;
   }
 
+  Status StartPcap(ServerContext* context, const StartPcapRequest* request,
+                   Empty* reply) override {
+    // Construct request payload
+    ssize_t size =
+        sizeof(struct wmediumd_start_pcap) + (request->path().length() + 1);
+    struct wmediumd_start_pcap* request_data_payload =
+        (struct wmediumd_start_pcap*)malloc(size);
+    strcpy(request_data_payload->pcap_path, request->path().c_str());
+
+    struct wmediumd_grpc_response_message response_message;
+    SendAndReceiveGrpcMessage(REQUEST_START_PCAP, size, request_data_payload,
+                              &response_message);
+    free(request_data_payload);
+    if (response_message.data_type != RESPONSE_ACK) {
+      return Status(StatusCode::FAILED_PRECONDITION,
+                    "Failed to execute StartPcap");
+    }
+    return Status::OK;
+  }
+
+  Status StopPcap(ServerContext* context, const Empty* request,
+                  Empty* reply) override {
+    struct wmediumd_grpc_response_message response_message;
+    SendAndReceiveGrpcMessage(REQUEST_STOP_PCAP, &response_message);
+    if (response_message.data_type != RESPONSE_ACK) {
+      return Status(StatusCode::FAILED_PRECONDITION,
+                    "Failed to execute StopPcap");
+    }
+    return Status::OK;
+  }
+
  private:
-  void SendRequestMessage(long msg_type_response,
-                          enum wmediumd_grpc_request_data_type data_type,
-                          ssize_t data_size, void* data_payload) {
+  void SendAndReceiveGrpcMessage(
+      enum wmediumd_grpc_request_data_type data_type, ssize_t data_size,
+      void* request_data_payload,
+      struct wmediumd_grpc_response_message* response_message) {
+    long msg_type_response = msg_type_response_increment.fetch_add(1);
+
+    // Send Request Message
     struct wmediumd_grpc_request_message request_message;
     request_message.msg_type_request = MSG_TYPE_REQUEST;
     request_message.msg_type_response = msg_type_response;
     request_message.data_type = data_type;
     request_message.data_size = data_size;
     assert(data_size <= GRPC_MSG_BUF_MAX);
-    memcpy(request_message.data_payload, data_payload, data_size);
+    if (data_size > 0) {
+      memcpy(request_message.data_payload, request_data_payload, data_size);
+    }
     msgsnd(msq_id_, &request_message, MSG_TYPE_REQUEST_SIZE, 0);
-  }
 
-  void TriggerEvent() {
+    // Trigger Event
     uint64_t evt = 1;
     write(event_fd_, &evt, sizeof(evt));
+
+    msgrcv(msq_id_, response_message, MSG_TYPE_RESPONSE_SIZE, msg_type_response,
+           0);
+  }
+
+  void SendAndReceiveGrpcMessage(
+      enum wmediumd_grpc_request_data_type data_type,
+      struct wmediumd_grpc_response_message* response_message) {
+    SendAndReceiveGrpcMessage(data_type, 0, NULL, response_message);
   }
 
   int event_fd_;
