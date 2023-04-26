@@ -27,6 +27,8 @@
 enum wmediumd_grpc_request_data_type {
     REQUEST_SET_POSITION,
     REQUEST_SET_SNR,
+    REQUEST_START_PCAP,
+    REQUEST_STOP_PCAP,
 };
 
 enum wmediumd_grpc_response_data_type {
