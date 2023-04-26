@@ -1479,7 +1479,7 @@ static int process_set_lci_message(struct wmediumd *ctx, struct wmediumd_set_lci
 	}
 	node->lci = strdup(set_lci->lci);
 
-	return node->lci != NULL;
+	return node->lci == NULL ? -1 : 0;
 }
 
 static int process_set_civicloc_message(struct wmediumd *ctx, struct wmediumd_set_civicloc *set_civicloc, size_t data_len) {
@@ -1498,7 +1498,7 @@ static int process_set_civicloc_message(struct wmediumd *ctx, struct wmediumd_se
 	}
 	node->civicloc = strdup(set_civicloc->civicloc);
 
-	return node->civicloc != NULL;
+	return node->civicloc == NULL ? -1 : 0;
 }
 
 static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {
@@ -1544,6 +1544,22 @@ static void wmediumd_grpc_service_handler(struct usfstl_loop_entry *entry) {
 	} else {
 		// TODO(273384914): Support more request types.
 		switch (request_message.data_type) {
+		case REQUEST_SET_CIVICLOC:
+			if (process_set_civicloc_message(ctx, (struct wmediumd_set_civicloc *)(request_message.data_payload), request_message.data_size) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute set_civicloc\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			break;
+		case REQUEST_SET_LCI:
+			if (process_set_lci_message(ctx, (struct wmediumd_set_lci *)(request_message.data_payload), request_message.data_size) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute set_lci\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			break;
 		case REQUEST_SET_POSITION:
 			if (process_set_position_message(ctx, (struct wmediumd_set_position *)(request_message.data_payload)) < 0) {
 				w_logf(ctx, LOG_ERR, "%s: failed to execute set_position\n", __func__);
