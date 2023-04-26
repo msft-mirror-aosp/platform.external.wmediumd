@@ -134,7 +134,7 @@ struct wmediumd_set_snr {
 };
 #pragma pack(pop)
 
-struct wmediumd_reload_config {
+struct wmediumd_load_config {
 	/* path of wmediumd configuration file */
 	char config_path[0];
 };

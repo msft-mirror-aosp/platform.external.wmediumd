@@ -25,6 +25,8 @@
 #define MSG_TYPE_RESPONSE_SIZE (sizeof(struct wmediumd_grpc_response_message) - sizeof(long))
 
 enum wmediumd_grpc_request_data_type {
+    REQUEST_LOAD_CONFIG,
+    REQUEST_RELOAD_CONFIG,
     REQUEST_SET_CIVICLOC,
     REQUEST_SET_LCI,
     REQUEST_SET_POSITION,

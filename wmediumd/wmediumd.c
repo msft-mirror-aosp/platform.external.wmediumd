@@ -1362,8 +1362,8 @@ static int process_set_snr_message(struct wmediumd *ctx, struct wmediumd_set_snr
 	return 0;
 }
 
-static int process_reload_config_message(struct wmediumd *ctx,
-					 struct wmediumd_reload_config *reload_config) {
+static int process_load_config_message(struct wmediumd *ctx,
+					 struct wmediumd_load_config *reload_config) {
 	char *config_path;
 	int result = 0;
 
@@ -1544,6 +1544,22 @@ static void wmediumd_grpc_service_handler(struct usfstl_loop_entry *entry) {
 	} else {
 		// TODO(273384914): Support more request types.
 		switch (request_message.data_type) {
+		case REQUEST_LOAD_CONFIG:
+			if (process_load_config_message(ctx, (struct wmediumd_load_config *)(request_message.data_payload)) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute load_config\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			break;
+		case REQUEST_RELOAD_CONFIG:
+			if (process_reload_current_config_message(ctx) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute reload_config\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK);
+			break;
 		case REQUEST_SET_CIVICLOC:
 			if (process_set_civicloc_message(ctx, (struct wmediumd_set_civicloc *)(request_message.data_payload), request_message.data_size) < 0) {
 				w_logf(ctx, LOG_ERR, "%s: failed to execute set_civicloc\n", __func__);
@@ -1692,8 +1708,8 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 		}
 		break;
 	case WMEDIUMD_MSG_RELOAD_CONFIG:
-		if (process_reload_config_message(ctx,
-				(struct wmediumd_reload_config *)data) < 0) {
+		if (process_load_config_message(ctx,
+				(struct wmediumd_load_config *)data) < 0) {
 			response = WMEDIUMD_MSG_INVALID;
 		}
 		break;
