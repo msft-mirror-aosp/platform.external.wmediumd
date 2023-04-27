@@ -1463,6 +1463,20 @@ static int process_set_position_message(struct wmediumd *ctx, struct wmediumd_se
 	return 0;
 }
 
+static int process_set_tx_power_message(struct wmediumd *ctx, struct wmediumd_set_tx_power *set_tx_power) {
+	struct station *node = get_station_by_addr(ctx, set_tx_power->mac);
+
+	if (node == NULL) {
+		return -1;
+	}
+
+	node->tx_power = set_tx_power->tx_power;
+
+	calc_path_loss(ctx);
+
+	return 0;
+}
+
 static int process_set_lci_message(struct wmediumd *ctx, struct wmediumd_set_lci *set_lci, size_t data_len) {
 	struct station *node = get_station_by_addr(ctx, set_lci->mac);
 
@@ -1599,6 +1613,14 @@ static void wmediumd_grpc_service_handler(struct usfstl_loop_entry *entry) {
 		case REQUEST_SET_SNR:
 			if (process_set_snr_message(ctx, (struct wmediumd_set_snr *)(request_message.data_payload)) < 0) {
 				w_logf(ctx, LOG_ERR, "%s: failed to execute set_snr\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
+			break;
+		case REQUEST_SET_TX_POWER:
+			if (process_set_tx_power_message(ctx, (struct wmediumd_set_tx_power *)(request_message.data_payload)) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute set_tx_power\n", __func__);
 				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
 				break;
 			}

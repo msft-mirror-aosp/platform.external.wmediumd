@@ -32,6 +32,7 @@ enum wmediumd_grpc_request_data_type {
     REQUEST_SET_LCI,
     REQUEST_SET_POSITION,
     REQUEST_SET_SNR,
+    REQUEST_SET_TX_POWER,
     REQUEST_START_PCAP,
     REQUEST_STOP_PCAP,
 };

@@ -176,6 +176,13 @@ struct wmediumd_set_position {
 	double y;
 };
 
+struct wmediumd_set_tx_power {
+	/* MAC address */
+	uint8_t mac[6];
+	/* TX power of station */
+	int tx_power;
+};
+
 struct wmediumd_set_lci {
 	/* MAC address */
 	uint8_t mac[6];
