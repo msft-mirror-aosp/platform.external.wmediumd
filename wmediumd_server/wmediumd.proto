@@ -26,6 +26,7 @@ service WmediumdService {
   rpc SetLci(SetLciRequest) returns (google.protobuf.Empty) {}
   rpc SetPosition(SetPositionRequest) returns (google.protobuf.Empty) {}
   rpc SetSnr(SetSnrRequest) returns (google.protobuf.Empty) {}
+  rpc SetTxpower(SetTxpowerRequest) returns (google.protobuf.Empty) {}
   rpc StartPcap(StartPcapRequest) returns (google.protobuf.Empty) {}
   rpc StopPcap(google.protobuf.Empty) returns (google.protobuf.Empty) {}
 }
@@ -68,6 +69,11 @@ message SetSnrRequest {
   string mac_address_1 = 1;
   string mac_address_2 = 2;
   int32 snr = 3;
+}
+
+message SetTxpowerRequest {
+  string mac_address = 1;
+  int32 tx_power = 2;
 }
 
 message StartPcapRequest {
