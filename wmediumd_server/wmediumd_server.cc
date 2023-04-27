@@ -129,6 +129,7 @@ class WmediumdServiceImpl final : public WmediumdService::Service {
     const auto* response_data_payload =
         reinterpret_cast<const wmediumd_station_infos*>(
             &response_message.data_payload);
+    response->set_station_count(response_data_payload->count);
     for (uint32_t i = 0; i < response_data_payload->count; ++i) {
       const auto* station = reinterpret_cast<const wmediumd_station_info*>(
           &response_data_payload->stations[i]);
