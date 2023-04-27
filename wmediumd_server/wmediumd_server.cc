@@ -50,6 +50,7 @@ using wmediumdserver::SetCiviclocRequest;
 using wmediumdserver::SetLciRequest;
 using wmediumdserver::SetPositionRequest;
 using wmediumdserver::SetSnrRequest;
+using wmediumdserver::SetTxpowerRequest;
 using wmediumdserver::StartPcapRequest;
 using wmediumdserver::WmediumdService;
 
@@ -275,6 +276,30 @@ class WmediumdServiceImpl final : public WmediumdService::Service {
     if (response_message.data_type != RESPONSE_ACK) {
       return Status(StatusCode::FAILED_PRECONDITION,
                     "Failed to execute SetSnr");
+    }
+    return Status::OK;
+  }
+
+  Status SetTxpower(ServerContext* context, const SetTxpowerRequest* request,
+                    Empty* reply) override {
+    // Validate parameters
+    if (!IsValidMacAddr(request->mac_address())) {
+      return Status(StatusCode::INVALID_ARGUMENT, "Got invalid mac address");
+    }
+    auto mac = ParseMacAddress(request->mac_address());
+
+    // Construct request payload
+    struct wmediumd_set_tx_power request_data_payload;
+    memcpy(request_data_payload.mac, &mac, sizeof(mac));
+    request_data_payload.tx_power = request->tx_power();
+
+    struct wmediumd_grpc_response_message response_message;
+    SendAndReceiveGrpcMessage(REQUEST_SET_TX_POWER,
+                              sizeof(request_data_payload),
+                              &request_data_payload, &response_message);
+    if (response_message.data_type != RESPONSE_ACK) {
+      return Status(StatusCode::FAILED_PRECONDITION,
+                    "Failed to execute SetTxpower");
     }
     return Status::OK;
   }
