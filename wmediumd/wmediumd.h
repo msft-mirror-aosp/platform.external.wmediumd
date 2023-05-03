@@ -149,7 +149,7 @@ typedef uint64_t u64;
 #define TIME_ARGS(a) ((unsigned long long)(a)->tv_sec), ((unsigned long long)(a)->tv_nsec/1000)
 
 #define MAC_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
-#define MAC_ARGS(a) a[0],a[1],a[2],a[3],a[4],a[5]
+#define MAC_ARGS(a) a[0]&0xff,a[1]&0xff,a[2]&0xff,a[3]&0xff,a[4]&0xff,a[5]&0xff
 
 #ifndef min
 #define min(x,y) ((x) < (y) ? (x) : (y))
