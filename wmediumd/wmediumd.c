@@ -39,6 +39,7 @@
 #include <unistd.h>
 #include <stdarg.h>
 #include <endian.h>
+#include <sys/msg.h>
 #include <usfstl/loop.h>
 #include <usfstl/sched.h>
 #include <usfstl/schedctrl.h>
@@ -50,6 +51,7 @@
 #include "config.h"
 #include "api.h"
 #include "pmsr.h"
+#include "grpc.h"
 
 USFSTL_SCHEDULER(scheduler);
 
@@ -834,7 +836,7 @@ static void wmediumd_deliver_frame(struct usfstl_job *job)
 			if (memcmp(src, station->addr, ETH_ALEN) == 0)
 				continue;
 
-			if (is_multicast_ether_addr(dest)) {
+			if (is_multicast_ether_addr(dest) && station->client != NULL) {
 				int snr, rate_idx, signal;
 				double error_prob;
 
@@ -1518,6 +1520,43 @@ static void close_pcapng(struct wmediumd *ctx) {
 
 static void init_pcapng(struct wmediumd *ctx, const char *filename);
 
+static void wmediumd_grpc_service_handler(struct usfstl_loop_entry *entry) {
+	struct wmediumd *ctx = entry->data;
+
+	// Receive request type from WmediumdService
+	uint64_t request_type;
+	read(entry->fd, &request_type, sizeof(uint64_t));
+
+	struct wmediumd_grpc_message request_body;
+	uint64_t response_type;
+
+	// Receive request body from WmediumdService and do the task.
+	// TODO(273384914): Support more request types.
+	switch (request_type) {
+	case REQUEST_SET_POSITION:
+		if (msgrcv(ctx->msq_id, &request_body, sizeof(struct wmediumd_set_position), GRPC_REQUEST, 0) != sizeof(struct wmediumd_set_position)) {
+			w_logf(ctx, LOG_ERR, "%s: failed to get set_position request body\n", __func__);
+		}
+
+		if (process_set_position_message(ctx, (struct wmediumd_set_position *)(request_body.data)) < 0) {
+			w_logf(ctx, LOG_ERR, "%s: failed to execute set_position\n", __func__);
+			response_type = RESPONSE_INVALID;
+		}
+		response_type = RESPONSE_ACK;
+		break;
+	default:
+		w_logf(ctx, LOG_ERR, "%s: unknown request type\n", __func__);
+		response_type = RESPONSE_INVALID;
+		break;
+	}
+
+	// TODO(273384914): Send response with response_type
+	return;
+}
+
+// TODO(273384914): Deprecate messages used in wmediumd_control after
+// implementing in wmediumd_grpc_service_handler to be used in the command
+// 'cvd env'.
 static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 {
 	struct client *client = container_of(entry, struct client, loop);
@@ -1871,7 +1910,7 @@ static void init_pcapng(struct wmediumd *ctx, const char *filename)
 #define VIRTIO_F_VERSION_1 32
 #endif
 
-int wmediumd_main(int argc, char *argv[])
+int wmediumd_main(int argc, char *argv[], int event_fd, int msq_id)
 {
 	int opt;
 	struct wmediumd ctx = {};
@@ -2021,6 +2060,13 @@ int wmediumd_main(int argc, char *argv[])
 	} else {
 		usfstl_sched_wallclock_init(&scheduler, 1000);
 	}
+
+	// Control event_fd to communicate WmediumdService.
+	ctx.grpc_loop.handler = wmediumd_grpc_service_handler;
+	ctx.grpc_loop.data = &ctx;
+	ctx.grpc_loop.fd = event_fd;
+	usfstl_loop_register(&ctx.grpc_loop);
+	ctx.msq_id = msq_id;
 
 	while (1) {
 		if (time_socket) {
