@@ -134,7 +134,7 @@ struct wmediumd_set_snr {
 };
 #pragma pack(pop)
 
-struct wmediumd_reload_config {
+struct wmediumd_load_config {
 	/* path of wmediumd configuration file */
 	char config_path[0];
 };
@@ -174,6 +174,13 @@ struct wmediumd_set_position {
 	double x;
 	/* Y position of station */
 	double y;
+};
+
+struct wmediumd_set_tx_power {
+	/* MAC address */
+	uint8_t mac[6];
+	/* TX power of station */
+	int tx_power;
 };
 
 struct wmediumd_set_lci {

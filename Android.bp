@@ -90,6 +90,23 @@ genrule {
     ],
 }
 
+java_library_host {
+    name: "WmediumdServerProto_java",
+    srcs: [
+        ":WmediumdServerProto",
+    ],
+    static_libs: [
+        "libprotobuf-java-full",
+    ],
+    proto: {
+        canonical_path_from_root: false,
+        type: "full",
+        include_dirs: [
+            "external/protobuf/src",
+        ],
+    },
+}
+
 cc_binary_host {
     name: "wmediumd",
     srcs: [

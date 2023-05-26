@@ -19,24 +19,49 @@
 
 #define GRPC_MSG_BUF_MAX 1024
 
-// Do not use_zero, the type of the message queue should be positive value.
-enum wmediumd_grpc_type {
-    GRPC_REQUEST = 1,
-    GRPC_RESPONSE,
+#define MSG_TYPE_REQUEST 1
+#define MSG_TYPE_RESPONSE_BASE 2
+#define MSG_TYPE_REQUEST_SIZE (sizeof(struct wmediumd_grpc_request_message) - sizeof(long))
+#define MSG_TYPE_RESPONSE_SIZE (sizeof(struct wmediumd_grpc_response_message) - sizeof(long))
+
+enum wmediumd_grpc_request_data_type {
+    REQUEST_LIST_STATIONS,
+    REQUEST_LOAD_CONFIG,
+    REQUEST_RELOAD_CONFIG,
+    REQUEST_SET_CIVICLOC,
+    REQUEST_SET_LCI,
+    REQUEST_SET_POSITION,
+    REQUEST_SET_SNR,
+    REQUEST_SET_TX_POWER,
+    REQUEST_START_PCAP,
+    REQUEST_STOP_PCAP,
 };
 
-// Do not use zero, writing zero to eventfd doesn't throw an event.
-enum wmediumd_grpc_request_type {
-    REQUEST_SET_POSITION = 1,
-};
-
-// Do not use zero, writing zero to eventfd doesn't throw an event.
-enum wmediumd_grpc_response_type {
-    RESPONSE_INVALID = 1,
+enum wmediumd_grpc_response_data_type {
+    RESPONSE_INVALID,
     RESPONSE_ACK,
+    RESPONSE_ACK_LIST_STATIONS,
 };
 
-struct wmediumd_grpc_message {
-    long type;
-    char data[GRPC_MSG_BUF_MAX];
+#pragma pack(push, 1)
+struct wmediumd_grpc_request_message {
+    // Message queue type
+    long msg_type_request;
+
+    // Message queue payload
+    long msg_type_response;
+    enum wmediumd_grpc_request_data_type data_type;
+    ssize_t data_size;
+    char data_payload[GRPC_MSG_BUF_MAX];
 };
+
+struct wmediumd_grpc_response_message {
+    // Message queue type
+    long msg_type_response;
+
+    // Message queue payload
+    enum wmediumd_grpc_response_data_type data_type;
+    ssize_t data_size;
+    char data_payload[GRPC_MSG_BUF_MAX];
+};
+#pragma pack(pop)
