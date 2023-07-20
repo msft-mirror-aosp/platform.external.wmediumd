@@ -64,8 +64,9 @@ genrule {
         "aprotoc",
         "protoc-gen-grpc-cpp-plugin",
     ],
-    cmd: "$(location aprotoc) -Iexternal/wmediumd/wmediumd_server -Iexternal/protobuf/src --plugin=protoc-gen-grpc=$(location protoc-gen-grpc-cpp-plugin) $(in) --grpc_out=$(genDir) --cpp_out=$(genDir)",
+    cmd: "$(location aprotoc) -Iexternal/wmediumd/wmediumd_server -Iexternal/protobuf/src --plugin=protoc-gen-grpc=$(location protoc-gen-grpc-cpp-plugin) $(location :WmediumdServerProto) --grpc_out=$(genDir) --cpp_out=$(genDir)",
     srcs: [
+        ":libprotobuf-internal-protos",
         ":WmediumdServerProto",
     ],
     out: [
@@ -80,8 +81,9 @@ genrule {
         "aprotoc",
         "protoc-gen-grpc-cpp-plugin",
     ],
-    cmd: "$(location aprotoc) -Iexternal/wmediumd/wmediumd_server -Iexternal/protobuf/src --plugin=protoc-gen-grpc=$(location protoc-gen-grpc-cpp-plugin) $(in) --grpc_out=$(genDir) --cpp_out=$(genDir)",
+    cmd: "$(location aprotoc) -Iexternal/wmediumd/wmediumd_server -Iexternal/protobuf/src --plugin=protoc-gen-grpc=$(location protoc-gen-grpc-cpp-plugin) $(location :WmediumdServerProto) --grpc_out=$(genDir) --cpp_out=$(genDir)",
     srcs: [
+        ":libprotobuf-internal-protos",
         ":WmediumdServerProto",
     ],
     out: [
