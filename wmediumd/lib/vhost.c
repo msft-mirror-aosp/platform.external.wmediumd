@@ -41,6 +41,7 @@ struct usfstl_vhost_user_dev_int {
 	struct {
 		struct usfstl_loop_entry entry;
 		bool enabled;
+		bool sleeping;
 		bool triggered;
 		struct vring virtq;
 		int call_fd;
@@ -673,6 +674,63 @@ static void usfstl_vhost_user_handle_msg(struct usfstl_loop_entry *entry)
 		reply_len = sizeof(uint64_t);
 		msg.payload.u64 = 0;
 		break;
+	case VHOST_USER_SLEEP:
+		USFSTL_ASSERT_EQ(len, (ssize_t)0, "%zd");
+		USFSTL_ASSERT_EQ(dev->ext.server->max_queues, NUM_SNAPSHOT_QUEUES, "%d");
+		for (virtq = 0; virtq < dev->ext.server->max_queues; virtq++) {
+			if (dev->virtqs[virtq].enabled) {
+				dev->virtqs[virtq].enabled = false;
+				dev->virtqs[virtq].sleeping = true;
+				usfstl_loop_unregister(&dev->virtqs[virtq].entry);
+			}
+		}
+		break;
+	case VHOST_USER_WAKE:
+		USFSTL_ASSERT_EQ(len, (ssize_t)0, "%zd");
+		USFSTL_ASSERT_EQ(dev->ext.server->max_queues, NUM_SNAPSHOT_QUEUES, "%d");
+		// enable previously enabled queues on wake
+		for (virtq = 0; virtq < dev->ext.server->max_queues; virtq++) {
+			if (dev->virtqs[virtq].sleeping) {
+				dev->virtqs[virtq].enabled = true;
+				dev->virtqs[virtq].sleeping = false;
+				usfstl_loop_register(&dev->virtqs[virtq].entry);
+				// TODO: is this needed?
+				usfstl_vhost_user_virtq_kick(dev, virtq);
+			}
+		}
+		break;
+	case VHOST_USER_SNAPSHOT: {
+		USFSTL_ASSERT_EQ(len, (ssize_t)0, "%zd");
+		USFSTL_ASSERT_EQ(dev->ext.server->max_queues, NUM_SNAPSHOT_QUEUES, "%d");
+		for (virtq = 0; virtq < dev->ext.server->max_queues; virtq++) {
+			msg.payload.snapshot_response.snapshot.sleeping[virtq] = dev->virtqs[virtq].sleeping;
+		}
+		msg.payload.snapshot_response.bool_store = 1;
+		reply_len = (int)sizeof(msg.payload.snapshot_response);
+		break;
+	}
+	case VHOST_USER_RESTORE: {
+		int *fds;
+		USFSTL_ASSERT(len == (int)sizeof(msg.payload.restore_request));
+		USFSTL_ASSERT_EQ(dev->ext.server->max_queues, NUM_SNAPSHOT_QUEUES, "%d");
+
+		fds = (int*)malloc(dev->ext.server->max_queues * sizeof(int));
+		for (virtq = 0; virtq < dev->ext.server->max_queues; virtq++) {
+			fds[virtq] = -1;
+		}
+		usfstl_vhost_user_get_msg_fds(&msghdr, fds, 2);
+
+		for (virtq = 0; virtq < dev->ext.server->max_queues; virtq++) {
+			dev->virtqs[virtq].sleeping = msg.payload.restore_request.snapshot.sleeping[virtq];
+			dev->virtqs[virtq].entry.fd = fds[virtq];
+		}
+
+		free(fds);
+
+		msg.payload.i8 = 1; // success
+		reply_len = sizeof(msg.payload.i8);
+		break;
+	}
 	default:
 		USFSTL_ASSERT(0, "Unsupported message: %d\n", msg.hdr.request);
 	}
