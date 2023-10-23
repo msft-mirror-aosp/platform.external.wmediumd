@@ -8,6 +8,10 @@
 
 #define MAX_REGIONS 8
 
+// For simplicity, we only support snapshotting a fixed number of queues. Should
+// be equal to HWSIM_NUM_VQS.
+#define NUM_SNAPSHOT_QUEUES 2
+
 /* these are from the vhost-user spec */
 
 struct vhost_user_msg_hdr {
@@ -29,11 +33,16 @@ struct vhost_user_region {
 	uint64_t mmap_offset;
 };
 
+struct vhost_user_snapshot {
+	int8_t sleeping[NUM_SNAPSHOT_QUEUES];
+};
+
 struct vhost_user_msg {
 	struct vhost_user_msg_hdr hdr;
 	union {
 #define VHOST_USER_U64_VRING_IDX_MSK	0x7f
 #define VHOST_USER_U64_NO_FD		0x80
+		int8_t i8;
 		uint64_t u64;
 		struct {
 			uint32_t idx, num;
@@ -63,6 +72,13 @@ struct vhost_user_msg {
 			uint64_t size;
 			uint64_t offset;
 		} vring_area;
+		struct {
+			int8_t bool_store;
+			struct vhost_user_snapshot snapshot;
+		}  __attribute__((packed)) snapshot_response;
+		struct {
+			struct vhost_user_snapshot snapshot;
+		} __attribute__((packed)) restore_request;
 	} __attribute__((packed)) payload;
 };
 
@@ -82,6 +98,10 @@ struct vhost_user_msg {
 #define VHOST_USER_GET_CONFIG			24
 #define VHOST_USER_VRING_KICK			35
 #define VHOST_USER_GET_SHARED_MEMORY_REGIONS	41
+#define VHOST_USER_SLEEP			42
+#define VHOST_USER_WAKE				43
+#define VHOST_USER_SNAPSHOT			44
+#define VHOST_USER_RESTORE			45
 
 #define VHOST_USER_SLAVE_CONFIG_CHANGE_MSG	 2
 #define VHOST_USER_SLAVE_VRING_CALL		 4
