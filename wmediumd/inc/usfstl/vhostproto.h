@@ -33,9 +33,22 @@ struct vhost_user_region {
 	uint64_t mmap_offset;
 };
 
-struct vhost_user_snapshot {
-	int8_t sleeping[NUM_SNAPSHOT_QUEUES];
+struct vring_snapshot {
+	int8_t enabled;
+	int8_t sleeping;
+	int8_t triggered;
+
+	unsigned int num;
+	uint64_t desc_guest_addr;
+	uint64_t avail_guest_addr;
+	uint64_t used_guest_addr;
+	uint16_t last_avail_idx;
 };
+
+struct vhost_user_snapshot {
+	struct vring_snapshot vrings[NUM_SNAPSHOT_QUEUES];
+};
+
 
 struct vhost_user_msg {
 	struct vhost_user_msg_hdr hdr;
