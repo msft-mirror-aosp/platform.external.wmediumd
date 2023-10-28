@@ -741,7 +741,7 @@ static void usfstl_vhost_user_handle_msg(struct usfstl_loop_entry *entry)
 		usfstl_vhost_user_get_msg_fds(&msghdr, fds, 2);
 
 		for (virtq = 0; virtq < dev->ext.server->max_queues; virtq++) {
-			const struct vring_snapshot* snapshot = &msg.payload.snapshot_response.snapshot.vrings[virtq];
+			const struct vring_snapshot* snapshot = &msg.payload.restore_request.snapshot.vrings[virtq];
 			dev->virtqs[virtq].enabled = snapshot->enabled;
 			dev->virtqs[virtq].sleeping = snapshot->sleeping;
 			dev->virtqs[virtq].triggered = snapshot->triggered;
