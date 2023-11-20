@@ -41,7 +41,11 @@ struct usfstl_vhost_user_dev_int {
 	struct {
 		struct usfstl_loop_entry entry;
 		bool enabled;
+		bool sleeping;
 		bool triggered;
+		uint64_t desc_guest_addr;
+		uint64_t avail_guest_addr;
+		uint64_t used_guest_addr;
 		struct vring virtq;
 		int call_fd;
 		uint16_t last_avail_idx;
@@ -578,6 +582,15 @@ static void usfstl_vhost_user_handle_msg(struct usfstl_loop_entry *entry)
 			      dev->ext.server->max_queues);
 		USFSTL_ASSERT_EQ(msg.payload.vring_addr.flags, (uint32_t)0, "0x%x");
 		USFSTL_ASSERT(!dev->virtqs[msg.payload.vring_addr.idx].enabled);
+
+		// Save the guest physical addresses to make snapshotting more convenient.
+		dev->virtqs[msg.payload.vring_addr.idx].desc_guest_addr =
+			usfstl_vhost_user_to_phys(&dev->ext, msg.payload.vring_addr.descriptor);
+		dev->virtqs[msg.payload.vring_addr.idx].used_guest_addr =
+			usfstl_vhost_user_to_phys(&dev->ext, msg.payload.vring_addr.used);
+		dev->virtqs[msg.payload.vring_addr.idx].avail_guest_addr =
+			usfstl_vhost_user_to_phys(&dev->ext, msg.payload.vring_addr.avail);
+
 		dev->virtqs[msg.payload.vring_addr.idx].last_avail_idx = 0;
 		dev->virtqs[msg.payload.vring_addr.idx].virtq.desc =
 			usfstl_vhost_user_to_va(&dev->ext,
@@ -673,6 +686,88 @@ static void usfstl_vhost_user_handle_msg(struct usfstl_loop_entry *entry)
 		reply_len = sizeof(uint64_t);
 		msg.payload.u64 = 0;
 		break;
+	case VHOST_USER_SLEEP:
+		USFSTL_ASSERT_EQ(len, (ssize_t)0, "%zd");
+		USFSTL_ASSERT_EQ(dev->ext.server->max_queues, NUM_SNAPSHOT_QUEUES, "%d");
+		for (virtq = 0; virtq < dev->ext.server->max_queues; virtq++) {
+			if (dev->virtqs[virtq].enabled) {
+				dev->virtqs[virtq].enabled = false;
+				dev->virtqs[virtq].sleeping = true;
+				usfstl_loop_unregister(&dev->virtqs[virtq].entry);
+			}
+		}
+		break;
+	case VHOST_USER_WAKE:
+		USFSTL_ASSERT_EQ(len, (ssize_t)0, "%zd");
+		USFSTL_ASSERT_EQ(dev->ext.server->max_queues, NUM_SNAPSHOT_QUEUES, "%d");
+		// enable previously enabled queues on wake
+		for (virtq = 0; virtq < dev->ext.server->max_queues; virtq++) {
+			if (dev->virtqs[virtq].sleeping) {
+				dev->virtqs[virtq].enabled = true;
+				dev->virtqs[virtq].sleeping = false;
+				usfstl_loop_register(&dev->virtqs[virtq].entry);
+				// TODO: is this needed?
+				usfstl_vhost_user_virtq_kick(dev, virtq);
+			}
+		}
+		break;
+	case VHOST_USER_SNAPSHOT: {
+		USFSTL_ASSERT_EQ(len, (ssize_t)0, "%zd");
+		USFSTL_ASSERT_EQ(dev->ext.server->max_queues, NUM_SNAPSHOT_QUEUES, "%d");
+		for (virtq = 0; virtq < dev->ext.server->max_queues; virtq++) {
+			struct vring_snapshot* snapshot = &msg.payload.snapshot_response.snapshot.vrings[virtq];
+			snapshot->enabled = dev->virtqs[virtq].enabled;
+			snapshot->sleeping = dev->virtqs[virtq].sleeping;
+			snapshot->triggered = dev->virtqs[virtq].triggered;
+			snapshot->num = dev->virtqs[virtq].virtq.num;
+			snapshot->desc_guest_addr = dev->virtqs[virtq].desc_guest_addr;
+			snapshot->avail_guest_addr = dev->virtqs[virtq].avail_guest_addr;
+			snapshot->used_guest_addr = dev->virtqs[virtq].used_guest_addr;
+			snapshot->last_avail_idx = dev->virtqs[virtq].last_avail_idx;
+		}
+		msg.payload.snapshot_response.bool_store = 1;
+		reply_len = (int)sizeof(msg.payload.snapshot_response);
+		break;
+	}
+	case VHOST_USER_RESTORE: {
+		int *fds;
+		USFSTL_ASSERT(len == (int)sizeof(msg.payload.restore_request));
+		USFSTL_ASSERT_EQ(dev->ext.server->max_queues, NUM_SNAPSHOT_QUEUES, "%d");
+
+		fds = (int*)malloc(dev->ext.server->max_queues * sizeof(int));
+		for (virtq = 0; virtq < dev->ext.server->max_queues; virtq++) {
+			fds[virtq] = -1;
+		}
+		usfstl_vhost_user_get_msg_fds(&msghdr, fds, 2);
+
+		for (virtq = 0; virtq < dev->ext.server->max_queues; virtq++) {
+			const struct vring_snapshot* snapshot = &msg.payload.restore_request.snapshot.vrings[virtq];
+			dev->virtqs[virtq].enabled = snapshot->enabled;
+			dev->virtqs[virtq].sleeping = snapshot->sleeping;
+			dev->virtqs[virtq].triggered = snapshot->triggered;
+			dev->virtqs[virtq].virtq.num = snapshot->num;
+			dev->virtqs[virtq].desc_guest_addr = snapshot->desc_guest_addr;
+			dev->virtqs[virtq].avail_guest_addr = snapshot->avail_guest_addr;
+			dev->virtqs[virtq].used_guest_addr = snapshot->used_guest_addr;
+			dev->virtqs[virtq].last_avail_idx = snapshot->last_avail_idx;
+
+			dev->virtqs[virtq].entry.fd = fds[virtq];
+
+			// Translate vring guest physical addresses.
+			dev->virtqs[virtq].virtq.desc = usfstl_vhost_phys_to_va(&dev->ext, dev->virtqs[virtq].desc_guest_addr);
+			dev->virtqs[virtq].virtq.used = usfstl_vhost_phys_to_va(&dev->ext, dev->virtqs[virtq].used_guest_addr);
+			dev->virtqs[virtq].virtq.avail = usfstl_vhost_phys_to_va(&dev->ext, dev->virtqs[virtq].avail_guest_addr);
+			USFSTL_ASSERT(dev->virtqs[virtq].virtq.avail &&
+				      dev->virtqs[virtq].virtq.desc &&
+				      dev->virtqs[virtq].virtq.used);
+		}
+
+		free(fds);
+
+		msg.payload.i8 = 1; // success
+		reply_len = sizeof(msg.payload.i8);
+		break;
+	}
 	default:
 		USFSTL_ASSERT(0, "Unsupported message: %d\n", msg.hdr.request);
 	}
@@ -843,9 +938,27 @@ void *usfstl_vhost_user_to_va(struct usfstl_vhost_user_dev *extdev, uint64_t add
 				dev->regions[region].user_addr +
 				dev->regions[region].mmap_offset);
 	}
-
 	USFSTL_ASSERT(0, "cannot translate user address %"PRIx64"\n", addr);
 	return NULL;
+}
+
+uint64_t usfstl_vhost_user_to_phys(struct usfstl_vhost_user_dev *extdev, uint64_t addr)
+{
+	struct usfstl_vhost_user_dev_int *dev;
+	unsigned int region;
+
+	dev = container_of(extdev, struct usfstl_vhost_user_dev_int, ext);
+
+	for (region = 0; region < dev->n_regions; region++) {
+		if (addr >= dev->regions[region].user_addr &&
+		    addr < dev->regions[region].user_addr +
+			   dev->regions[region].size)
+			return addr -
+				dev->regions[region].user_addr +
+				dev->regions[region].guest_phys_addr;
+	}
+	USFSTL_ASSERT(0, "cannot translate user address %"PRIx64"\n", addr);
+	return 0;
 }
 
 void *usfstl_vhost_phys_to_va(struct usfstl_vhost_user_dev *extdev, uint64_t addr)
