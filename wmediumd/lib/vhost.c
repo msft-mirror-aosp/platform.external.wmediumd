@@ -696,6 +696,8 @@ static void usfstl_vhost_user_handle_msg(struct usfstl_loop_entry *entry)
 				usfstl_loop_unregister(&dev->virtqs[virtq].entry);
 			}
 		}
+		msg.payload.i8 = 1; // success
+		reply_len = sizeof(msg.payload.i8);
 		break;
 	case VHOST_USER_WAKE:
 		USFSTL_ASSERT_EQ(len, (ssize_t)0, "%zd");
@@ -710,6 +712,8 @@ static void usfstl_vhost_user_handle_msg(struct usfstl_loop_entry *entry)
 				usfstl_vhost_user_virtq_kick(dev, virtq);
 			}
 		}
+		msg.payload.i8 = 1; // success
+		reply_len = sizeof(msg.payload.i8);
 		break;
 	case VHOST_USER_SNAPSHOT: {
 		USFSTL_ASSERT_EQ(len, (ssize_t)0, "%zd");
