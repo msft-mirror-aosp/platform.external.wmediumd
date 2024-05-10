@@ -149,7 +149,7 @@ typedef uint64_t u64;
 #define TIME_ARGS(a) ((unsigned long long)(a)->tv_sec), ((unsigned long long)(a)->tv_nsec/1000)
 
 #define MAC_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
-#define MAC_ARGS(a) a[0],a[1],a[2],a[3],a[4],a[5]
+#define MAC_ARGS(a) a[0]&0xff,a[1]&0xff,a[2]&0xff,a[3]&0xff,a[4]&0xff,a[5]&0xff
 
 #ifndef min
 #define min(x,y) ((x) < (y) ? (x) : (y))
@@ -214,9 +214,10 @@ struct client {
 
 struct wmediumd {
 	int timerfd;
+	int msq_id;
 
 	struct nl_sock *sock;
-	struct usfstl_loop_entry nl_loop;
+	struct usfstl_loop_entry nl_loop, grpc_loop;
 
 	struct usfstl_sched_ctrl *ctrl;
 
@@ -305,5 +306,15 @@ int w_logf(struct wmediumd *ctx, u8 level, const char *format, ...);
 int w_flogf(struct wmediumd *ctx, u8 level, FILE *stream, const char *format, ...);
 int index_to_rate(size_t index, u32 freq);
 int get_max_index(void);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int wmediumd_main(int argc, char *argv[], int event_fd, int msq_id);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* WMEDIUMD_H_ */

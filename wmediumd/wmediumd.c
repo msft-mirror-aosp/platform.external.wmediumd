@@ -39,6 +39,7 @@
 #include <unistd.h>
 #include <stdarg.h>
 #include <endian.h>
+#include <sys/msg.h>
 #include <usfstl/loop.h>
 #include <usfstl/sched.h>
 #include <usfstl/schedctrl.h>
@@ -50,6 +51,7 @@
 #include "config.h"
 #include "api.h"
 #include "pmsr.h"
+#include "grpc.h"
 
 USFSTL_SCHEDULER(scheduler);
 
@@ -834,7 +836,7 @@ static void wmediumd_deliver_frame(struct usfstl_job *job)
 			if (memcmp(src, station->addr, ETH_ALEN) == 0)
 				continue;
 
-			if (is_multicast_ether_addr(dest)) {
+			if (is_multicast_ether_addr(dest) && station->client != NULL) {
 				int snr, rate_idx, signal;
 				double error_prob;
 
@@ -1360,8 +1362,8 @@ static int process_set_snr_message(struct wmediumd *ctx, struct wmediumd_set_snr
 	return 0;
 }
 
-static int process_reload_config_message(struct wmediumd *ctx,
-					 struct wmediumd_reload_config *reload_config) {
+static int process_load_config_message(struct wmediumd *ctx,
+					 struct wmediumd_load_config *reload_config) {
 	char *config_path;
 	int result = 0;
 
@@ -1461,6 +1463,20 @@ static int process_set_position_message(struct wmediumd *ctx, struct wmediumd_se
 	return 0;
 }
 
+static int process_set_tx_power_message(struct wmediumd *ctx, struct wmediumd_set_tx_power *set_tx_power) {
+	struct station *node = get_station_by_addr(ctx, set_tx_power->mac);
+
+	if (node == NULL) {
+		return -1;
+	}
+
+	node->tx_power = set_tx_power->tx_power;
+
+	calc_path_loss(ctx);
+
+	return 0;
+}
+
 static int process_set_lci_message(struct wmediumd *ctx, struct wmediumd_set_lci *set_lci, size_t data_len) {
 	struct station *node = get_station_by_addr(ctx, set_lci->mac);
 
@@ -1477,7 +1493,7 @@ static int process_set_lci_message(struct wmediumd *ctx, struct wmediumd_set_lci
 	}
 	node->lci = strdup(set_lci->lci);
 
-	return node->lci != NULL;
+	return node->lci == NULL ? -1 : 0;
 }
 
 static int process_set_civicloc_message(struct wmediumd *ctx, struct wmediumd_set_civicloc *set_civicloc, size_t data_len) {
@@ -1496,7 +1512,7 @@ static int process_set_civicloc_message(struct wmediumd *ctx, struct wmediumd_se
 	}
 	node->civicloc = strdup(set_civicloc->civicloc);
 
-	return node->civicloc != NULL;
+	return node->civicloc == NULL ? -1 : 0;
 }
 
 static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {
@@ -1518,6 +1534,118 @@ static void close_pcapng(struct wmediumd *ctx) {
 
 static void init_pcapng(struct wmediumd *ctx, const char *filename);
 
+static void wmediumd_send_grpc_response(int msq_id, long msg_type_response, enum wmediumd_grpc_response_data_type data_type, ssize_t data_size, unsigned char *data_payload) {
+	struct wmediumd_grpc_response_message response_message;
+	response_message.msg_type_response = msg_type_response;
+	response_message.data_type = data_type;
+	response_message.data_size = data_size;
+	if (data_size > 0) {
+		memcpy(response_message.data_payload, data_payload, data_size);
+	}
+	msgsnd(msq_id, &response_message, MSG_TYPE_RESPONSE_SIZE, 0);
+}
+
+static void wmediumd_grpc_service_handler(struct usfstl_loop_entry *entry) {
+	struct wmediumd *ctx = entry->data;
+	ssize_t msg_len;
+
+	// Receive event from wmediumd_server
+	uint64_t evt;
+	read(entry->fd, &evt, sizeof(evt));
+
+	struct wmediumd_grpc_request_message request_message;
+	msg_len = msgrcv(ctx->msq_id, &request_message, MSG_TYPE_REQUEST_SIZE, MSG_TYPE_REQUEST, IPC_NOWAIT);
+	if (msg_len != MSG_TYPE_REQUEST_SIZE) {
+		w_logf(ctx, LOG_ERR, "%s: failed to get request message\n", __func__);
+	} else {
+		switch (request_message.data_type) {
+		case REQUEST_LIST_STATIONS: {
+			ssize_t size = 0;
+			unsigned char *payload = NULL;
+			if (process_get_stations_message(ctx, &size, &payload) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute list_stations\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
+			} else {
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK_LIST_STATIONS, size, payload);
+			}
+			break;
+		}
+		case REQUEST_LOAD_CONFIG:
+			if (process_load_config_message(ctx, (struct wmediumd_load_config *)(request_message.data_payload)) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute load_config\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
+			break;
+		case REQUEST_RELOAD_CONFIG:
+			if (process_reload_current_config_message(ctx) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute reload_config\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
+			break;
+		case REQUEST_SET_CIVICLOC:
+			if (process_set_civicloc_message(ctx, (struct wmediumd_set_civicloc *)(request_message.data_payload), request_message.data_size) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute set_civicloc\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
+			break;
+		case REQUEST_SET_LCI:
+			if (process_set_lci_message(ctx, (struct wmediumd_set_lci *)(request_message.data_payload), request_message.data_size) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute set_lci\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
+			break;
+		case REQUEST_SET_POSITION:
+			if (process_set_position_message(ctx, (struct wmediumd_set_position *)(request_message.data_payload)) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute set_position\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
+			break;
+		case REQUEST_SET_SNR:
+			if (process_set_snr_message(ctx, (struct wmediumd_set_snr *)(request_message.data_payload)) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute set_snr\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
+			break;
+		case REQUEST_SET_TX_POWER:
+			if (process_set_tx_power_message(ctx, (struct wmediumd_set_tx_power *)(request_message.data_payload)) < 0) {
+				w_logf(ctx, LOG_ERR, "%s: failed to execute set_tx_power\n", __func__);
+				wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
+				break;
+			}
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
+			break;
+		case REQUEST_START_PCAP:
+			init_pcapng(ctx, ((struct wmediumd_start_pcap *)(request_message.data_payload))->pcap_path);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
+			break;
+		case REQUEST_STOP_PCAP:
+			close_pcapng(ctx);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_ACK, 0, NULL);
+			break;
+		default:
+			w_logf(ctx, LOG_ERR, "%s: unknown request type\n", __func__);
+			wmediumd_send_grpc_response(ctx->msq_id, request_message.msg_type_response, RESPONSE_INVALID, 0, NULL);
+			break;
+		}
+	}
+	return;
+}
+
+// TODO(273384914): Deprecate messages used in wmediumd_control after
+// implementing in wmediumd_grpc_service_handler to be used in the command
+// 'cvd env'.
 static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 {
 	struct client *client = container_of(entry, struct client, loop);
@@ -1614,8 +1742,8 @@ static void wmediumd_api_handler(struct usfstl_loop_entry *entry)
 		}
 		break;
 	case WMEDIUMD_MSG_RELOAD_CONFIG:
-		if (process_reload_config_message(ctx,
-				(struct wmediumd_reload_config *)data) < 0) {
+		if (process_load_config_message(ctx,
+				(struct wmediumd_load_config *)data) < 0) {
 			response = WMEDIUMD_MSG_INVALID;
 		}
 		break;
@@ -1871,7 +1999,7 @@ static void init_pcapng(struct wmediumd *ctx, const char *filename)
 #define VIRTIO_F_VERSION_1 32
 #endif
 
-int main(int argc, char *argv[])
+int wmediumd_main(int argc, char *argv[], int event_fd, int msq_id)
 {
 	int opt;
 	struct wmediumd ctx = {};
@@ -2021,6 +2149,13 @@ int main(int argc, char *argv[])
 	} else {
 		usfstl_sched_wallclock_init(&scheduler, 1000);
 	}
+
+	// Control event_fd to communicate WmediumdService.
+	ctx.grpc_loop.handler = wmediumd_grpc_service_handler;
+	ctx.grpc_loop.data = &ctx;
+	ctx.grpc_loop.fd = event_fd;
+	usfstl_loop_register(&ctx.grpc_loop);
+	ctx.msq_id = msq_id;
 
 	while (1) {
 		if (time_socket) {
