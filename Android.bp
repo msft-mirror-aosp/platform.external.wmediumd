@@ -64,8 +64,9 @@ genrule {
         "aprotoc",
         "protoc-gen-grpc-cpp-plugin",
     ],
-    cmd: "$(location aprotoc) -Iexternal/wmediumd/wmediumd_server -Iexternal/protobuf/src --plugin=protoc-gen-grpc=$(location protoc-gen-grpc-cpp-plugin) $(in) --grpc_out=$(genDir) --cpp_out=$(genDir)",
+    cmd: "$(location aprotoc) -Iexternal/wmediumd/wmediumd_server -Iexternal/protobuf/src --plugin=protoc-gen-grpc=$(location protoc-gen-grpc-cpp-plugin) $(location :WmediumdServerProto) --grpc_out=$(genDir) --cpp_out=$(genDir)",
     srcs: [
+        ":libprotobuf-internal-protos",
         ":WmediumdServerProto",
     ],
     out: [
@@ -80,14 +81,32 @@ genrule {
         "aprotoc",
         "protoc-gen-grpc-cpp-plugin",
     ],
-    cmd: "$(location aprotoc) -Iexternal/wmediumd/wmediumd_server -Iexternal/protobuf/src --plugin=protoc-gen-grpc=$(location protoc-gen-grpc-cpp-plugin) $(in) --grpc_out=$(genDir) --cpp_out=$(genDir)",
+    cmd: "$(location aprotoc) -Iexternal/wmediumd/wmediumd_server -Iexternal/protobuf/src --plugin=protoc-gen-grpc=$(location protoc-gen-grpc-cpp-plugin) $(location :WmediumdServerProto) --grpc_out=$(genDir) --cpp_out=$(genDir)",
     srcs: [
+        ":libprotobuf-internal-protos",
         ":WmediumdServerProto",
     ],
     out: [
         "wmediumd.grpc.pb.cc",
         "wmediumd.pb.cc",
     ],
+}
+
+java_library_host {
+    name: "WmediumdServerProto_java",
+    srcs: [
+        ":WmediumdServerProto",
+    ],
+    static_libs: [
+        "libprotobuf-java-full",
+    ],
+    proto: {
+        canonical_path_from_root: false,
+        type: "full",
+        include_dirs: [
+            "external/protobuf/src",
+        ],
+    },
 }
 
 cc_binary_host {
