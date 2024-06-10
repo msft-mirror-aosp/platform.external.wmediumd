@@ -143,7 +143,6 @@ cc_binary_host {
         "libgrpc++_reflection",
         "libwmediumd_server",
     ],
-    cpp_std: "c++17",
     visibility: [
         "//device/google/cuttlefish/build",
     ],
