@@ -16,15 +16,69 @@ syntax = "proto3";
 
 package wmediumdserver;
 
+option java_package = "com.android.wmediumd";
+
 import "google/protobuf/empty.proto";
 
 service WmediumdService {
-  // TODO(273384914): Define a response type.
+  rpc ListStations(google.protobuf.Empty) returns (ListStationsResponse) {}
+  rpc LoadConfig(LoadConfigRequest) returns (google.protobuf.Empty) {}
+  rpc ReloadConfig(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+  rpc SetCivicloc(SetCiviclocRequest) returns (google.protobuf.Empty) {}
+  rpc SetLci(SetLciRequest) returns (google.protobuf.Empty) {}
   rpc SetPosition(SetPositionRequest) returns (google.protobuf.Empty) {}
+  rpc SetSnr(SetSnrRequest) returns (google.protobuf.Empty) {}
+  rpc SetTxpower(SetTxpowerRequest) returns (google.protobuf.Empty) {}
+  rpc StartPcap(StartPcapRequest) returns (google.protobuf.Empty) {}
+  rpc StopPcap(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+}
+
+message StationInfo {
+  string mac_address = 1;
+  string mac_hw_address = 2;
+  double x_pos = 3;
+  double y_pos = 4;
+  int32 tx_power = 5;
+  string lci = 6;
+  string civicloc = 7;
+}
+
+message ListStationsResponse {
+  int32 station_count = 1;
+  repeated StationInfo stations = 2;
+}
+
+message LoadConfigRequest {
+  string path = 1;
+}
+
+message SetCiviclocRequest {
+  string mac_address = 1;
+  string civicloc = 2;
+}
+
+message SetLciRequest {
+  string mac_address = 1;
+  string lci = 2;
 }
 
 message SetPositionRequest {
   string mac_address = 1;
   double x_pos = 2;
   double y_pos = 3;
+}
+
+message SetSnrRequest {
+  string mac_address_1 = 1;
+  string mac_address_2 = 2;
+  int32 snr = 3;
+}
+
+message SetTxpowerRequest {
+  string mac_address = 1;
+  int32 tx_power = 2;
+}
+
+message StartPcapRequest {
+  string path = 1;
 }
