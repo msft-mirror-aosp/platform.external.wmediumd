@@ -33,20 +33,8 @@ struct vhost_user_region {
 	uint64_t mmap_offset;
 };
 
-struct vring_snapshot {
-	int8_t enabled;
-	int8_t sleeping;
-	int8_t triggered;
-
-	unsigned int num;
-	uint64_t desc_guest_addr;
-	uint64_t avail_guest_addr;
-	uint64_t used_guest_addr;
-	uint16_t last_avail_idx;
-};
 
 struct vhost_user_snapshot {
-	struct vring_snapshot vrings[NUM_SNAPSHOT_QUEUES];
 };
 
 
@@ -60,6 +48,10 @@ struct vhost_user_msg {
 		struct {
 			uint32_t idx, num;
 		} vring_state;
+		// "A vring descriptor index for split virtqueues"
+		struct {
+			uint32_t idx, index_in_avail_ring;
+		} vring_desc_index_split;
 		struct {
 			uint32_t idx, flags;
 			uint64_t descriptor;
@@ -102,6 +94,7 @@ struct vhost_user_msg {
 #define VHOST_USER_SET_VRING_NUM		 8
 #define VHOST_USER_SET_VRING_ADDR		 9
 #define VHOST_USER_SET_VRING_BASE		10
+#define VHOST_USER_GET_VRING_BASE		11
 #define VHOST_USER_SET_VRING_KICK		12
 #define VHOST_USER_SET_VRING_CALL		13
 #define VHOST_USER_GET_PROTOCOL_FEATURES	15
@@ -110,11 +103,9 @@ struct vhost_user_msg {
 #define VHOST_USER_SET_SLAVE_REQ_FD		21
 #define VHOST_USER_GET_CONFIG			24
 #define VHOST_USER_VRING_KICK			35
-#define VHOST_USER_GET_SHARED_MEMORY_REGIONS	41
-#define VHOST_USER_SLEEP			42
-#define VHOST_USER_WAKE				43
-#define VHOST_USER_SNAPSHOT			44
-#define VHOST_USER_RESTORE			45
+#define VHOST_USER_SNAPSHOT			1002
+#define VHOST_USER_RESTORE			1003
+#define VHOST_USER_GET_SHARED_MEMORY_REGIONS	1004
 
 #define VHOST_USER_SLAVE_CONFIG_CHANGE_MSG	 2
 #define VHOST_USER_SLAVE_VRING_CALL		 4
