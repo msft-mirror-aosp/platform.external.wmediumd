@@ -133,7 +133,6 @@ enum {
 
 #define SNR_DEFAULT 30
 
-#include <pthread.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <syslog.h>
@@ -257,12 +256,6 @@ struct wmediumd {
 	FILE *pcap_file;
 
 	char *config_path;
-
-	// data_transfer_thread and data_transfer_direction are undefined when
-	// data_transfer_fd is invalid (-1).
-	int data_transfer_fd;
-	uint32_t data_transfer_direction;
-	pthread_t data_transfer_thread;
 };
 
 struct hwsim_tx_rate {

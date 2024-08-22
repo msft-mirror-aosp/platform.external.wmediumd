@@ -78,10 +78,6 @@ struct vhost_user_msg {
 			uint64_t offset;
 		} vring_area;
 		struct {
-			uint32_t transfer_direction;
-			uint32_t migration_phase;
-		} device_state_transfer;
-		struct {
 			int8_t bool_store;
 			struct vhost_user_snapshot snapshot;
 		}  __attribute__((packed)) snapshot_response;
@@ -107,8 +103,6 @@ struct vhost_user_msg {
 #define VHOST_USER_SET_SLAVE_REQ_FD		21
 #define VHOST_USER_GET_CONFIG			24
 #define VHOST_USER_VRING_KICK			35
-#define VHOST_USER_SET_DEVICE_STATE_FD		42
-#define VHOST_USER_CHECK_DEVICE_STATE		43
 #define VHOST_USER_SNAPSHOT			1002
 #define VHOST_USER_RESTORE			1003
 #define VHOST_USER_GET_SHARED_MEMORY_REGIONS	1004
@@ -133,6 +127,5 @@ struct vhost_user_msg {
 #define VHOST_USER_PROTOCOL_F_INFLIGHT_SHMFD       12
 #define VHOST_USER_PROTOCOL_F_RESET_DEVICE         13
 #define VHOST_USER_PROTOCOL_F_INBAND_NOTIFICATIONS 14
-#define VHOST_USER_PROTOCOL_F_DEVICE_STATE         19
 
 #endif // _USFSTL_VHOST_PROTO_H_

@@ -645,7 +645,6 @@ static void usfstl_vhost_user_handle_msg(struct usfstl_loop_entry *entry)
 		msg.payload.u64 |= 1ULL << VHOST_USER_PROTOCOL_F_SLAVE_REQ;
 		msg.payload.u64 |= 1ULL << VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD;
 		msg.payload.u64 |= 1ULL << VHOST_USER_PROTOCOL_F_REPLY_ACK;
-		msg.payload.u64 |= 1ULL << VHOST_USER_PROTOCOL_F_DEVICE_STATE;
 		break;
 	case VHOST_USER_SET_VRING_ENABLE:
 		USFSTL_ASSERT(len == (int)sizeof(msg.payload.vring_state));
@@ -688,29 +687,6 @@ static void usfstl_vhost_user_handle_msg(struct usfstl_loop_entry *entry)
 		reply_len = sizeof(uint64_t);
 		msg.payload.u64 = 0;
 		break;
-	case VHOST_USER_SET_DEVICE_STATE_FD: {
-		USFSTL_ASSERT_EQ(len, sizeof(msg.payload.device_state_transfer), "%zd");
-		USFSTL_ASSERT_EQ(msg.payload.device_state_transfer.migration_phase, /* stopped */ (uint32_t)0, "%d");
-		// Read the attached FD.
-		usfstl_vhost_user_get_msg_fds(&msghdr, &fd, 1);
-		USFSTL_ASSERT_CMP(fd, !=, -1, "%d");
-		// Delegate the data transfer to the backend.
-		USFSTL_ASSERT(dev->ext.server->ops->start_data_transfer);
-		dev->ext.server->ops->start_data_transfer(&dev->ext, msg.payload.device_state_transfer.transfer_direction, fd);
-		// Respond with success and the "invalid FD" flag (because we
-		// didn't include an FD in the response).
-		msg.payload.u64 = 0x100;
-		reply_len = sizeof(msg.payload.u64);
-		break;
-	}
-	case VHOST_USER_CHECK_DEVICE_STATE: {
-		USFSTL_ASSERT_EQ(len, (ssize_t)0, "%zd");
-		USFSTL_ASSERT(dev->ext.server->ops->check_data_transfer);
-	        dev->ext.server->ops->check_data_transfer(&dev->ext);
-		msg.payload.u64 = 0;
-		reply_len = sizeof(msg.payload.u64);
-		break;
-	}
 	case VHOST_USER_SNAPSHOT: {
 		USFSTL_ASSERT_EQ(len, (ssize_t)0, "%zd");
 		msg.payload.snapshot_response.bool_store = 1;
