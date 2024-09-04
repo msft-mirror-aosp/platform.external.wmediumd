@@ -31,6 +31,19 @@ struct usfstl_vhost_user_ops {
 		       struct usfstl_vhost_user_buf *buf,
 		       unsigned int vring);
 	void (*disconnected)(struct usfstl_vhost_user_dev *dev);
+	// Called to initiate a snapshot or restore. Implementor should spawn a
+	// thread that reads or writes state to `fd` and then closes `fd`.
+	//
+	// Attempting to read/write to `fd` directly from `start_data_transfer`
+	// will likely cause a deadlock.
+	//
+	// `transfer_direction == 0` => snapshot (should write to the fd)
+	// `transfer_direction == 1` => restore (should read from the fd)
+	void (*start_data_transfer)(struct usfstl_vhost_user_dev *dev, uint32_t transfer_direction, int fd);
+	// Called to check if the work spawn by `start_data_transfer`
+	// succeeded. Should block until the work completes and abort if
+	// something went wrong.
+	void (*check_data_transfer)(struct usfstl_vhost_user_dev *dev);
 };
 
 /**
