@@ -785,7 +785,7 @@ static void send_cloned_frame_msg(struct wmediumd *ctx, struct client *src,
 	if (nla_put(msg, HWSIM_ATTR_ADDR_RECEIVER, ETH_ALEN,
 		    dst->hwaddr) ||
 	    nla_put(msg, HWSIM_ATTR_FRAME, data_len, data) ||
-	    nla_put_u32(msg, HWSIM_ATTR_RX_RATE, 1) ||
+	    nla_put_u32(msg, HWSIM_ATTR_RX_RATE, 7) ||
 	    nla_put_u32(msg, HWSIM_ATTR_FREQ, freq) ||
 	    nla_put_u32(msg, HWSIM_ATTR_SIGNAL, signal)) {
 		w_logf(ctx, LOG_ERR, "%s: Failed to fill a payload\n", __func__);
@@ -2200,14 +2200,14 @@ int wmediumd_main(int argc, char *argv[], int event_fd, int msq_id)
 
 	if (time_socket) {
 		usfstl_sched_ctrl_start(&ctrl, time_socket,
-				      1000 /* nsec per usec */,
+				      100,
 				      (uint64_t)-1 /* no ID */,
 				      &scheduler);
 		vusrv.scheduler = &scheduler;
 		vusrv.ctrl = &ctrl;
 		ctx.ctrl = &ctrl;
 	} else {
-		usfstl_sched_wallclock_init(&scheduler, 1000);
+		usfstl_sched_wallclock_init(&scheduler, 100);
 	}
 
 	// Control event_fd to communicate WmediumdService.
