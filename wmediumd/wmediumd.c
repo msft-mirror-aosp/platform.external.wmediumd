@@ -39,6 +39,7 @@
 #include <unistd.h>
 #include <stdarg.h>
 #include <endian.h>
+#include <pthread.h>
 #include <sys/msg.h>
 #include <usfstl/loop.h>
 #include <usfstl/sched.h>
@@ -784,7 +785,7 @@ static void send_cloned_frame_msg(struct wmediumd *ctx, struct client *src,
 	if (nla_put(msg, HWSIM_ATTR_ADDR_RECEIVER, ETH_ALEN,
 		    dst->hwaddr) ||
 	    nla_put(msg, HWSIM_ATTR_FRAME, data_len, data) ||
-	    nla_put_u32(msg, HWSIM_ATTR_RX_RATE, 1) ||
+	    nla_put_u32(msg, HWSIM_ATTR_RX_RATE, 7) ||
 	    nla_put_u32(msg, HWSIM_ATTR_FREQ, freq) ||
 	    nla_put_u32(msg, HWSIM_ATTR_SIGNAL, signal)) {
 		w_logf(ctx, LOG_ERR, "%s: Failed to fill a payload\n", __func__);
@@ -1348,6 +1349,63 @@ static void wmediumd_vu_disconnected(struct usfstl_vhost_user_dev *dev)
 	wmediumd_remove_client(dev->server->data, client);
 }
 
+static void *do_data_transfer(void *cookie) {
+	struct wmediumd *ctx = cookie;
+	switch (ctx->data_transfer_direction) {
+	case 0: // save
+		// No device state to save yet, just close the FD.
+		close(ctx->data_transfer_fd);
+		break;
+	case 1: { // load
+		// No device state to load yet, just verify it is empty.
+		uint8_t buf;
+		int n = read(ctx->data_transfer_fd, &buf, 1);
+		if (n < 0) {
+			w_logf(ctx, LOG_ERR, "%s: read failed: %s\n", __func__, strerror(errno));
+			abort();
+		}
+		if (n != 0) {
+			w_logf(ctx, LOG_ERR, "%s: loaded device state is non-empty. BUG!\n", __func__);
+			abort();
+		}
+		close(ctx->data_transfer_fd);
+		break;
+	}
+	default:
+		w_logf(ctx, LOG_ERR, "%s: invalid transfer_direction: %d\n", __func__, ctx->data_transfer_direction);
+		abort();
+	}
+	return NULL;
+}
+
+static void wmediumd_vu_start_data_transfer(struct usfstl_vhost_user_dev *dev, uint32_t transfer_direction, int fd) {
+	struct wmediumd *ctx = dev->server->data;
+
+	if (ctx->data_transfer_fd != -1) {
+		w_logf(ctx, LOG_ERR, "%s: can't start multiple data transfers\n", __func__);
+		abort();
+	}
+
+	ctx->data_transfer_fd = fd;
+	ctx->data_transfer_direction = transfer_direction;
+	if (pthread_create(&ctx->data_transfer_thread, NULL, &do_data_transfer, ctx)) {
+		w_logf(ctx, LOG_ERR, "%s: pthread_create failed: %s\n", __func__, strerror(errno));
+		abort();
+	}
+}
+static void wmediumd_vu_check_data_transfer(struct usfstl_vhost_user_dev *dev) {
+	struct wmediumd *ctx = dev->server->data;
+	if (ctx->data_transfer_fd == -1) {
+		w_logf(ctx, LOG_ERR, "%s: no active data transfer\n", __func__);
+		abort();
+	}
+	if (pthread_join(ctx->data_transfer_thread, NULL)) {
+		w_logf(ctx, LOG_ERR, "%s: pthread_join failed: %s\n", __func__, strerror(errno));
+		abort();
+	}
+	ctx->data_transfer_fd = -1;
+}
+
 static int process_set_snr_message(struct wmediumd *ctx, struct wmediumd_set_snr *set_snr) {
 	struct station *node1 = get_station_by_addr(ctx, set_snr->node1_mac);
 	struct station *node2 = get_station_by_addr(ctx, set_snr->node2_mac);
@@ -1519,6 +1577,8 @@ static const struct usfstl_vhost_user_ops wmediumd_vu_ops = {
 	.connected = wmediumd_vu_connected,
 	.handle = wmediumd_vu_handle,
 	.disconnected = wmediumd_vu_disconnected,
+	.start_data_transfer = wmediumd_vu_start_data_transfer,
+	.check_data_transfer = wmediumd_vu_check_data_transfer,
 };
 
 static void close_pcapng(struct wmediumd *ctx) {
@@ -2140,14 +2200,14 @@ int wmediumd_main(int argc, char *argv[], int event_fd, int msq_id)
 
 	if (time_socket) {
 		usfstl_sched_ctrl_start(&ctrl, time_socket,
-				      1000 /* nsec per usec */,
+				      100,
 				      (uint64_t)-1 /* no ID */,
 				      &scheduler);
 		vusrv.scheduler = &scheduler;
 		vusrv.ctrl = &ctrl;
 		ctx.ctrl = &ctrl;
 	} else {
-		usfstl_sched_wallclock_init(&scheduler, 1000);
+		usfstl_sched_wallclock_init(&scheduler, 100);
 	}
 
 	// Control event_fd to communicate WmediumdService.
@@ -2156,6 +2216,8 @@ int wmediumd_main(int argc, char *argv[], int event_fd, int msq_id)
 	ctx.grpc_loop.fd = event_fd;
 	usfstl_loop_register(&ctx.grpc_loop);
 	ctx.msq_id = msq_id;
+
+	ctx.data_transfer_fd = -1;
 
 	while (1) {
 		if (time_socket) {
