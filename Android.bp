@@ -24,6 +24,9 @@ cc_binary_host {
     static_libs: [
         "libconfig",
     ],
+    cflags: [
+        "-Wno-tautological-constant-out-of-range-compare",
+    ],
     visibility: [
         "//device/google/cuttlefish/build",
     ],
